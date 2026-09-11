@@ -5,6 +5,7 @@ services:
     networks: !override [data, ingress, media]
     environment:
       RAG_OFFLINE: 'true'
+      INTELLIGENCE_PROVIDER: ollama
       RAG_LLM_PROVIDER: ollama
       RAG_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
       RAG_EMBEDDING_PROVIDER: ollama
@@ -17,6 +18,7 @@ services:
     networks: !override [data]
     environment:
       RAG_OFFLINE: 'true'
+      INTELLIGENCE_PROVIDER: ollama
       RAG_LLM_PROVIDER: ollama
       RAG_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
       RAG_EMBEDDING_PROVIDER: ollama
@@ -26,7 +28,9 @@ services:
       RAG_EMBEDDING_LOCAL_URL: http://ollama:11434
       OPENAI_API_KEY: ''
   intelligence-worker:
+    networks: !override [data]
     environment:
+      INTELLIGENCE_PROVIDER: ollama
       INTELLIGENCE_LOCAL_URL: http://ollama:11434
       INTELLIGENCE_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
       OPENAI_API_KEY: ''
@@ -34,6 +38,7 @@ services:
     networks: !override [data, media]
     environment:
       RAG_OFFLINE: 'true'
+      INTELLIGENCE_PROVIDER: ollama
       RAG_LLM_PROVIDER: ollama
       RAG_LLM_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
       RAG_EMBEDDING_PROVIDER: ollama

@@ -1,4 +1,4 @@
-"""Independent speech and text-analysis loops; model weights load once per speech process."""
+"""Independent speech and text-analysis loops; speech weights load on demand and unload while idle."""
 
 import argparse
 import logging
@@ -306,6 +306,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     stopped = False
     model = None
+    last_audio_at = 0.0
 
     def stop(_signal, _frame):
         nonlocal stopped
@@ -316,6 +317,13 @@ def main():
     while not stopped:
         try:
             if mode == "speech":
+                chunk = claim_audio(factory)
+                if chunk is None:
+                    if model is not None and time.monotonic() - last_audio_at >= 60:
+                        model.model.unload_model()
+                        model = None
+                    time.sleep(0.3)
+                    continue
                 if model is None:
                     model_metadata(settings.stt_model_path)
                     import onnxruntime
@@ -330,11 +338,8 @@ def main():
                         cpu_threads=settings.stt_cpu_threads,
                         local_files_only=True,
                     )
-                chunk = claim_audio(factory)
-                if chunk:
-                    process_audio(factory, settings, chunk, model)
-                else:
-                    time.sleep(0.3)
+                process_audio(factory, settings, chunk, model)
+                last_audio_at = time.monotonic()
             elif mode == "recording":
                 if not process_recording_once(factory, settings):
                     time.sleep(1)
