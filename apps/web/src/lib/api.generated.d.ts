@@ -673,6 +673,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/assistant/panel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Panel */
+        post: operations["resolveAssistantPanel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/meetings/{meeting_id}/board": {
         parameters: {
             query?: never;
@@ -800,7 +817,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "reply" | "search_meetings" | "create_tasks";
+            action: "reply" | "search_meetings" | "create_tasks" | "open_panel";
             /** Answer */
             answer: string;
             /** Search Query */
@@ -1188,7 +1205,7 @@ export interface components {
              */
             id: string;
             /** Result */
-            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"];
+            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"] | components["schemas"]["NavigationResult"];
         };
         /** ConversationTurnOutput */
         ConversationTurnOutput: {
@@ -1200,7 +1217,7 @@ export interface components {
              */
             id: string;
             /** Result */
-            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"] | components["schemas"]["PendingChatResult"];
+            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"] | components["schemas"]["NavigationResult"] | components["schemas"]["PendingChatResult"];
             /**
              * Created At
              * Format: date-time
@@ -1577,6 +1594,34 @@ export interface components {
             transcript_length: number;
             transcription: components["schemas"]["TranscriptionOutput"] | null;
         };
+        /** NavigationResult */
+        NavigationResult: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "navigation";
+            /** Answer */
+            answer: string;
+            /**
+             * View
+             * @enum {string}
+             */
+            view: "kanban" | "insights" | "conversation";
+            panel: components["schemas"]["MeetingPanelAction"] | null;
+            /** Meetings */
+            meetings: components["schemas"]["PanelMeeting"][];
+        };
+        /** PanelMeeting */
+        PanelMeeting: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+        };
         /** ParticipantOutput */
         ParticipantOutput: {
             /**
@@ -1826,6 +1871,8 @@ export interface components {
             end: number;
             /** Text */
             text: string;
+            /** Speaker */
+            speaker?: string | null;
         };
         /** TranscriptionOutput */
         TranscriptionOutput: {
@@ -3825,6 +3872,7 @@ export interface operations {
                 title: string;
                 filename: string;
                 language?: "auto" | "ru" | "kk" | "en";
+                num_speakers?: number | null;
             };
             header?: {
                 "x-requested-with"?: string | null;
@@ -7038,6 +7086,122 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Answer"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolveAssistantPanel: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-requested-with"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssistantQuestion"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NavigationResult"];
                 };
             };
             /** @description Bad Request */

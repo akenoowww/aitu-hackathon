@@ -36,7 +36,7 @@ class AssistantQuestion(Question):
 
 class AssistantDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["reply", "search_meetings", "create_tasks"]
+    action: Literal["reply", "search_meetings", "create_tasks", "open_panel"]
     answer: str = Field(max_length=12000)
     search_query: str = Field(max_length=2000)
 
@@ -266,6 +266,27 @@ class TaskChatResult(TaskCreationResult):
     mode: Literal["tasks"]
 
 
+class PanelPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meeting_id: uuid.UUID | None
+    view: Literal["kanban", "insights", "conversation"]
+    answer: str = Field(max_length=3000)
+    choices: list[uuid.UUID] = Field(max_length=8)
+
+
+class PanelMeeting(BaseModel):
+    id: uuid.UUID
+    title: str
+
+
+class NavigationResult(BaseModel):
+    mode: Literal["navigation"] = "navigation"
+    answer: str
+    view: Literal["kanban", "insights", "conversation"]
+    panel: MeetingPanelAction | None
+    meetings: list[PanelMeeting]
+
+
 class ConversationCreate(BaseModel):
     id: uuid.UUID
 
@@ -280,7 +301,9 @@ class ConversationSummary(BaseModel):
 
 class ConversationTurnInput(Question):
     id: uuid.UUID
-    result: GeneralChatResult | MeetingChatResult | TaskChatResult = Field(discriminator="mode")
+    result: GeneralChatResult | MeetingChatResult | TaskChatResult | NavigationResult = Field(
+        discriminator="mode"
+    )
 
     @field_validator("result")
     @classmethod
@@ -308,9 +331,13 @@ class ConversationTurnStart(Question):
 
 class ConversationTurnOutput(Question):
     id: uuid.UUID
-    result: GeneralChatResult | MeetingChatResult | TaskChatResult | PendingChatResult = Field(
-        discriminator="mode"
-    )
+    result: (
+        GeneralChatResult
+        | MeetingChatResult
+        | TaskChatResult
+        | NavigationResult
+        | PendingChatResult
+    ) = Field(discriminator="mode")
     created_at: datetime
 
 

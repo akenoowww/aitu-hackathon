@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     audio_dir: Path = Path("data/audio")
     max_audio_bytes: int = Field(default=104_857_600, ge=1024, le=104_857_600)
     max_audio_seconds: int = Field(default=7200, ge=1, le=7200)
-    stt_model_path: Path = Path("models/whisper-small")
+    stt_model_path: Path = Path("models/whisper-large-v3-turbo")
     stt_device: Literal["cpu", "cuda"] = "cpu"
     stt_compute_type: Literal["int8", "float16", "int8_float16", "float32"] = "int8"
     stt_cpu_threads: int = Field(default=4, ge=1, le=64)
@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     live_analysis_interval: int = Field(default=12, ge=5, le=60)
     live_analysis_reasoning: str = "low"
 
+    intelligence_provider: Literal["ollama", "openai"] = "ollama"
+    intelligence_openai_model: str = "gpt-5.6-luna"
+    intelligence_reasoning_effort: Literal["low", "medium", "high"] = "low"
     intelligence_model: str = "qwen3:8b"
     intelligence_local_url: str = "http://host.docker.internal:11434"
 

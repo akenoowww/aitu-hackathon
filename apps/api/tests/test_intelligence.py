@@ -12,7 +12,7 @@ from sqlalchemy import inspect, update
 
 from aimeet_api.db.models import utcnow
 from aimeet_api.modules.intelligence.models import MeetingBoard
-from aimeet_api.modules.intelligence.provider import LocalProtocolProvider
+from aimeet_api.modules.intelligence.provider import ProtocolProvider
 from aimeet_api.modules.intelligence.schemas import CardInput, GeneratedProtocol
 from aimeet_api.modules.intelligence.worker import ProtocolWorker, chunks
 
@@ -283,12 +283,12 @@ def test_local_provider_never_uses_cloud_even_with_cloud_rag(app):
             },
         )
 
-    provider = LocalProtocolProvider(settings, httpx.MockTransport(transport))
+    provider = ProtocolProvider(settings, httpx.MockTransport(transport))
     assert provider.generate(TEXT).cards[0].assignee == "Алия"
     assert len(seen) == 1
     settings.intelligence_local_url = "https://public.example.com"
     with pytest.raises(ValueError):
-        LocalProtocolProvider(settings)
+        ProtocolProvider(settings)
 
 
 def test_migration_roundtrip(tmp_path, monkeypatch):
@@ -343,3 +343,36 @@ def test_partial_summary_cannot_be_published_after_lease_loss(authenticated_clie
         db.commit()
     assert not worker.publish_summary(meeting_id, token, [{"text": "STALE", "quote": TEXT}], 50)
     assert authenticated_client.get(path(mid)).json()["summary"] == []
+
+
+def test_openai_protocol_uses_explicit_model_and_strict_schema(app):
+    from pydantic import SecretStr
+
+    from aimeet_api.modules.rag.response_schema import strict_response_schema
+
+    settings = app.state.settings
+    settings.intelligence_provider = "openai"
+    settings.intelligence_openai_model = "gpt-5.6-luna"
+    settings.openai_api_key = SecretStr("test")
+
+    def transport(request):
+        assert str(request.url) == "https://api.openai.com/v1/responses"
+        payload = json.loads(request.content)
+        assert payload["model"] == "gpt-5.6-luna"
+        assert payload["reasoning"] == {"effort": "low"}
+        assert payload["input"][0]["content"] == TEXT
+        assert payload["text"]["format"]["schema"] == strict_response_schema(GeneratedProtocol)
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": result().model_dump_json()}],
+                    }
+                ],
+            },
+        )
+
+    assert ProtocolProvider(settings, httpx.MockTransport(transport)).generate(TEXT).cards

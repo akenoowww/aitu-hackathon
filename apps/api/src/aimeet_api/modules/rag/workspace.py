@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import undefer
 
 from aimeet_api.db.models import Meeting
+from aimeet_api.modules.intelligence.models import MeetingBoard
 from aimeet_api.modules.rag.board_retrieval import board_candidates, retrieve_board_sources
 from aimeet_api.modules.rag.chunking import embedding_profile, source_hash
 from aimeet_api.modules.rag.models import RagIndex, RagNode
@@ -33,6 +34,10 @@ WORKSPACE_INSTRUCTIONS = (
     + """
 Catalog sources describe saved meeting records and the total number of records in THIS workspace.
 Use them to answer whether meetings exist, how many are saved, their titles and archive dates.
+Catalog sources also report outcomes processing state. If asked about the latest meeting and
+content is unavailable, explain its actual processing state with a catalog quote instead of
+claiming the user's question is too vague. A failed analysis does not mean no discussion occurred.
+If transcript evidence is available, answer from it even if the outcomes job failed.
 M0 gives the exact total; the listed meetings are a bounded recent subset, not the entire archive.
 Cite catalog source IDs and exact quotes just like transcript sources. A saved record is not proof
 that a live meeting actually occurred. Catalog titles alone do not establish what was discussed.
@@ -122,7 +127,8 @@ def catalog_sources(db, workspace_id):
         select(func.count()).select_from(Meeting).where(Meeting.workspace_id == workspace_id)
     )
     rows = db.execute(
-        select(Meeting.id, Meeting.title, Meeting.created_at)
+        select(Meeting.id, Meeting.title, Meeting.created_at, MeetingBoard.status)
+        .outerjoin(MeetingBoard, MeetingBoard.meeting_id == Meeting.id)
         .where(Meeting.workspace_id == workspace_id)
         .order_by(Meeting.created_at.desc(), Meeting.id)
         .limit(20)
@@ -138,14 +144,22 @@ def catalog_sources(db, workspace_id):
             ),
         )
     ]
-    for number, (meeting_id, title, created_at) in enumerate(rows, 1):
+    for number, (meeting_id, title, created_at, board_status) in enumerate(rows, 1):
+        processing = {
+            "failed": "Не удалось подготовить итоги",
+            "queued": "Подготовка итогов в очереди",
+            "running": "Итоги обрабатываются",
+            "ready": "Итоги подготовлены",
+        }.get(board_status, "Итоги ещё не подготовлены")
         sources.append(
             CatalogSource(
                 source_id=f"M{number}",
                 meeting_id=meeting_id,
                 meeting_title=title,
                 text=(
-                    f"Название встречи: {title}. Дата добавления в архив: {created_at.isoformat()}."
+                    f"Название встречи: {title}. "
+                    f"Дата добавления в архив: {created_at.isoformat()}. "
+                    f"Состояние итогов: {processing}."
                 ),
             )
         )

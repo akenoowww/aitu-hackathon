@@ -271,7 +271,7 @@ test(`board citations open resizable Kanban at ${viewport}px without leaving cha
 
 }
 
-for (const choice of ['open', 'none', 'foreign', 'reply'] as const) {
+for (const choice of ['open', 'none', 'foreign', 'reply', 'navigation', 'choose'] as const) {
   test(`AI presentation choice ${choice} controls automatic panel opening`, async ({ page }) => {
     await mock(page)
     let turns: Array<Record<string, unknown>> = []
@@ -293,9 +293,18 @@ for (const choice of ['open', 'none', 'foreign', 'reply'] as const) {
     const coverage = { total: 1, ready: 1, pending: 0, failed: 0, not_indexed: 0, unavailable: 0 }
     await page.route('**/rag/index', (route) => route.fulfill({ json: coverage }))
     await page.route('**/assistant/chat/stream', (route) => route.fulfill({ json: {
-      action: choice === 'reply' ? 'reply' : 'search_meetings',
+      action: choice === 'reply' ? 'reply' : ['navigation', 'choose'].includes(choice) ? 'open_panel' : 'search_meetings',
       answer: choice === 'reply' ? 'A plain conversational answer.' : '', search_query: 'Show the kanban',
     } }))
+    await page.route('**/assistant/panel', (route) => route.fulfill({ json: {
+      mode: 'navigation', answer: 'Choose or open the meeting.', view: 'kanban',
+      panel: choice === 'navigation' ? { meeting_id: id, view: 'kanban' } : null,
+      meetings: [{ id, title: meeting.title }],
+    } }))
+    if (['navigation', 'choose'].includes(choice)) {
+      await page.route('**/rag/index', () => { throw new Error('Navigation must not request a search index') })
+      await page.route('**/rag/chat/stream', () => { throw new Error('Navigation must not search transcripts') })
+    }
     await page.route('**/rag/chat/stream', (route) => route.fulfill({ json: {
       status: 'answered', answer: 'The board contains a task.', sources: [], coverage,
       panel: choice === 'none' ? null : { meeting_id: choice === 'foreign' ? cardId : id, view: 'kanban' },
@@ -308,8 +317,12 @@ for (const choice of ['open', 'none', 'foreign', 'reply'] as const) {
     const input = page.getByRole('textbox', { name: 'Сообщение ассистенту' })
     await input.fill('Покажи канбан')
     await page.getByRole('button', { name: 'Отправить вопрос', exact: true }).click()
-    await expect(page.getByText(choice === 'reply' ? 'A plain conversational answer.' : 'The board contains a task.', { exact: true }).first()).toBeVisible()
-    if (choice === 'open') {
+    await expect(page.getByText(choice === 'reply' ? 'A plain conversational answer.' : ['navigation', 'choose'].includes(choice) ? 'Choose or open the meeting.' : 'The board contains a task.', { exact: true }).first()).toBeVisible()
+    if (choice === 'choose') {
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      await page.locator('.workspace-chat-board-source').click()
+    }
+    if (['open', 'navigation', 'choose'].includes(choice)) {
       await expect(page.getByRole('dialog')).toBeVisible()
       await expect(page.getByRole('dialog').getByRole('button', { name: card.title, exact: true })).toBeVisible()
       await page.getByRole('button', { name: 'Закрыть панель встречи', exact: true }).click()
@@ -318,7 +331,7 @@ for (const choice of ['open', 'none', 'foreign', 'reply'] as const) {
       await expect(page.getByRole('dialog')).toHaveCount(0)
     }
     await page.reload()
-    await expect(page.getByText(choice === 'reply' ? 'A plain conversational answer.' : 'The board contains a task.', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText(choice === 'reply' ? 'A plain conversational answer.' : ['navigation', 'choose'].includes(choice) ? 'Choose or open the meeting.' : 'The board contains a task.', { exact: true }).first()).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)
   })
 }

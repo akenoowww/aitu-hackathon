@@ -12,7 +12,7 @@ def main():
     parser.add_argument(
         "--model",
         choices=["small", "medium", "large-v3", "large-v3-turbo"],
-        default="small",
+        default="large-v3-turbo",
     )
     parser.add_argument("--revision", help="Optional immutable Hugging Face commit SHA")
     parser.add_argument("--output", type=Path)

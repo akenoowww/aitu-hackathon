@@ -11,7 +11,7 @@ import pytest
 from aimeet_api.db.models import Meeting
 from aimeet_api.modules.intelligence.evidence import EvidenceIndex, locate
 from aimeet_api.modules.intelligence.models import MeetingBoard
-from aimeet_api.modules.intelligence.provider import LocalProtocolProvider
+from aimeet_api.modules.intelligence.provider import ProtocolProvider
 from aimeet_api.modules.intelligence.schemas import CardInput, GeneratedProtocol, Reconciliation
 from aimeet_api.modules.intelligence.timeline import reconcile
 from aimeet_api.modules.intelligence.worker import ProtocolWorker, grounded
@@ -299,7 +299,7 @@ def test_reconciliation_provider_stays_local(app):
         assert "links" in payload["format"]["properties"]
         return httpx.Response(200, json={"done": True, "message": {"content": '{"links":[]}'}})
 
-    provider = LocalProtocolProvider(app.state.settings, httpx.MockTransport(transport))
+    provider = ProtocolProvider(app.state.settings, httpx.MockTransport(transport))
     assert provider.reconcile("[]").links == []
 
 

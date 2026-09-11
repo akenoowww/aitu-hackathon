@@ -10,6 +10,9 @@ x-api: &api
     APP_ENV: ${APP_ENV:-development}
     COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8787,http://127.0.0.1:8787}
+    INTELLIGENCE_PROVIDER: ${INTELLIGENCE_PROVIDER:-openai}
+    INTELLIGENCE_OPENAI_MODEL: ${INTELLIGENCE_OPENAI_MODEL:-gpt-5.6-luna}
+    INTELLIGENCE_REASONING_EFFORT: ${INTELLIGENCE_REASONING_EFFORT:-low}
     INTELLIGENCE_MODEL: ${INTELLIGENCE_MODEL:-qwen3:8b}
     INTELLIGENCE_LOCAL_URL: ${INTELLIGENCE_LOCAL_URL:-http://host.docker.internal:11434}
     RAG_OFFLINE: ${RAG_OFFLINE:-false}
@@ -36,7 +39,7 @@ x-api: &api
     RAG_JOB_LEASE_SECONDS: ${RAG_JOB_LEASE_SECONDS:-600}
     RAG_JOB_MAX_ATTEMPTS: ${RAG_JOB_MAX_ATTEMPTS:-3}
     AUDIO_DIR: /data/audio
-    STT_MODEL_PATH: /models/${STT_MODEL_DIR:-whisper-small}
+    STT_MODEL_PATH: /models/${STT_MODEL_DIR:-whisper-large-v3-turbo}
     STT_CPU_THREADS: ${STT_CPU_THREADS:-4}
     STT_DIARIZATION_ENABLED: ${STT_DIARIZATION_ENABLED:-true}
     STT_DIARIZATION_MODEL_PATH: /models/${STT_DIARIZATION_MODEL_DIR:-speaker-diarization}
@@ -219,7 +222,7 @@ services:
   intelligence-worker:
     <<: *api
     command: [.venv/bin/python, -m, aimeet_api.modules.intelligence.worker]
-    networks: [data]
+    networks: [data, ai-egress]
     extra_hosts: [host.docker.internal:host-gateway]
     depends_on:
       migrate: {condition: service_completed_successfully}

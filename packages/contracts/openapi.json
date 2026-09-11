@@ -6738,6 +6738,160 @@
         }
       }
     },
+    "/api/v1/assistant/panel": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Assistant Panel",
+        "operationId": "resolveAssistantPanel",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-requested-with",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantQuestion"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NavigationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/api/v1/meetings/{meeting_id}/board": {
       "get": {
         "tags": [
@@ -7608,7 +7762,8 @@
             "enum": [
               "reply",
               "search_meetings",
-              "create_tasks"
+              "create_tasks",
+              "open_panel"
             ],
             "title": "Action"
           },
@@ -8586,6 +8741,9 @@
               },
               {
                 "$ref": "#/components/schemas/TaskChatResult"
+              },
+              {
+                "$ref": "#/components/schemas/NavigationResult"
               }
             ],
             "title": "Result",
@@ -8594,6 +8752,7 @@
               "mapping": {
                 "assistant": "#/components/schemas/GeneralChatResult",
                 "meetings": "#/components/schemas/MeetingChatResult",
+                "navigation": "#/components/schemas/NavigationResult",
                 "tasks": "#/components/schemas/TaskChatResult"
               }
             }
@@ -8633,6 +8792,9 @@
                 "$ref": "#/components/schemas/TaskChatResult"
               },
               {
+                "$ref": "#/components/schemas/NavigationResult"
+              },
+              {
                 "$ref": "#/components/schemas/PendingChatResult"
               }
             ],
@@ -8643,6 +8805,7 @@
                 "assistant": "#/components/schemas/GeneralChatResult",
                 "failed": "#/components/schemas/PendingChatResult",
                 "meetings": "#/components/schemas/MeetingChatResult",
+                "navigation": "#/components/schemas/NavigationResult",
                 "pending": "#/components/schemas/PendingChatResult",
                 "tasks": "#/components/schemas/TaskChatResult"
               }
@@ -9638,6 +9801,73 @@
           "transcription"
         ],
         "title": "MeetingSummary"
+      },
+      "NavigationResult": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "navigation",
+            "title": "Mode",
+            "default": "navigation"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "kanban",
+              "insights",
+              "conversation"
+            ],
+            "title": "View"
+          },
+          "panel": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MeetingPanelAction"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meetings": {
+            "items": {
+              "$ref": "#/components/schemas/PanelMeeting"
+            },
+            "type": "array",
+            "title": "Meetings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "answer",
+          "view",
+          "panel",
+          "meetings"
+        ],
+        "title": "NavigationResult"
+      },
+      "PanelMeeting": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "PanelMeeting"
       },
       "ParticipantOutput": {
         "properties": {

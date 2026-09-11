@@ -1,4 +1,4 @@
-"""Local-only structured generation. Never inherits the RAG cloud provider."""
+"""Explicitly configured structured generation for meeting outcomes."""
 
 from pydantic import ValidationError
 
@@ -36,9 +36,21 @@ description — краткие детали, title — понятная суть
 Пиши на языке встречи (ru/kk/en, для смешанной речи — на основном языке)."""
 
 
-class LocalProtocolProvider:
+class ProtocolProvider:
     def __init__(self, settings: Settings, transport=None):
+        self.cloud = settings.intelligence_provider == "openai"
         self.model = settings.intelligence_model
+        if self.cloud:
+            config = Settings.model_validate(
+                {
+                    **settings.model_dump(),
+                    "rag_llm_provider": "openai",
+                    "rag_llm_model": settings.intelligence_openai_model,
+                    "rag_reasoning_effort": settings.intelligence_reasoning_effort,
+                }
+            )
+            self.provider = Providers(config, transport=transport)
+            return
         # Re-validate the endpoint under the existing offline allowlist.
         local = Settings.model_validate(
             {
@@ -76,6 +88,8 @@ earlier_id/later_id копируй из карточек; quote — точный
         )
 
     def _structured(self, text, instructions, schema):
+        if self.cloud:
+            return self.provider._generate(instructions, text, response_model=schema)
         data = self.provider._post(
             "ollama",
             "/api/chat",

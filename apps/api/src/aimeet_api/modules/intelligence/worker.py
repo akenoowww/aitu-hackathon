@@ -14,7 +14,7 @@ from aimeet_api.db.models import Meeting, utcnow
 from aimeet_api.db.session import create_engine_and_session
 from aimeet_api.modules.intelligence.evidence import locate
 from aimeet_api.modules.intelligence.models import MeetingBoard
-from aimeet_api.modules.intelligence.provider import LocalProtocolProvider
+from aimeet_api.modules.intelligence.provider import ProtocolProvider
 from aimeet_api.modules.intelligence.schemas import Card, Revision
 from aimeet_api.modules.intelligence.service import digest
 from aimeet_api.modules.intelligence.timeline import reconcile
@@ -116,7 +116,7 @@ class ProtocolWorker:
     def __init__(self, sessions, settings, provider=None):
         self.sessions = sessions
         self.settings = settings
-        self.provider = provider or LocalProtocolProvider(settings)
+        self.provider = provider or ProtocolProvider(settings)
 
     def owned(self, meeting_id, token):
         return and_(

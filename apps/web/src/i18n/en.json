@@ -109,7 +109,7 @@
   "Загружаем итоги встречи…": "Loading meeting insights…",
   "Повторить загрузку": "Reload",
   "Стенограмма станет рабочей доской": "Turn your transcript into a working board",
-  "Разберите встречу локальной моделью или добавьте карточки вручную. Неозвученные исполнители и сроки останутся пустыми.": "Analyze the meeting with a local model or add cards manually. Unmentioned assignees and deadlines will stay empty.",
+  "Разберите встречу локальной моделью или добавьте карточки вручную. Неозвученные исполнители и сроки останутся пустыми.": "Analyze the meeting with AI or add cards manually. Unmentioned assignees and deadlines will stay empty.",
   "Автоматический разбор станет доступен после подготовки стенограммы.": "Automatic analysis will be available once the transcript is ready.",
   "Выделяем решения и поручения. Можно уйти со страницы — обработка продолжится.": "Extracting decisions and tasks. You can leave this page — processing will continue.",
   "Обработка встречи": "Meeting processing",
@@ -352,9 +352,9 @@
   "Цитата не совпадает со стенограммой. Скопируйте исходный фрагмент без изменений.": "The quote does not match the transcript. Copy the original excerpt without changes.",
   "Не удалось связать изменение с исходной договорённостью. Повторите разбор или заполните карточки вручную.": "Could not link the change to the original agreement. Repeat the analysis or fill in the cards manually.",
   "Стенограмма изменилась. Откройте встречу заново, чтобы проверить источники.": "The transcript changed. Reopen the meeting to check the sources.",
-  "Не удалось подключиться к локальной модели. Запустите её и повторите обработку.": "Could not connect to the local model. Start it and retry processing.",
-  "Локальная модель не успела завершить обработку. Повторите попытку.": "The local model did not finish processing in time. Please retry.",
-  "Локальная модель отклонила запрос. Проверьте, что модель установлена и запущена.": "The local model rejected the request. Check that the model is installed and running.",
+  "Не удалось подключиться к локальной модели. Запустите её и повторите обработку.": "Could not connect to the analysis model. Retry processing.",
+  "Локальная модель не успела завершить обработку. Повторите попытку.": "The model did not finish the analysis in time. Please retry.",
+  "Локальная модель отклонила запрос. Проверьте, что модель установлена и запущена.": "The model rejected the analysis request. Check the service settings.",
   "В результате найдены цитаты, которых нет в стенограмме. Повторите обработку или добавьте карточки вручную.": "The result contains quotes missing from the transcript. Retry processing or add cards manually.",
   "Для разбора встречи дождитесь готовой стенограммы.": "Wait for the transcript to be ready before analyzing the meeting.",
   "На доске достигнут лимит в 1500 карточек.": "The board has reached its limit of 1,500 cards.",
@@ -522,5 +522,6 @@
   "Выполнено поручений: {completed} из {total}": "Tasks completed: {completed} of {total}",
   "Закрыть панель встречи": "Close meeting panel",
   "Цитаты из ответа": "Quotes from the answer",
-  "Ширина панели": "Panel width"
+  "Ширина панели": "Panel width",
+  "Выберите встречу для открытия": "Choose a meeting to open"
 }

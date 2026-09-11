@@ -24,6 +24,14 @@ const suggestions = () => [
 
 function AnswerContent({ result, onOpenMeeting }: { result: AssistantResult; onOpenMeeting: (selection: ChatMeetingSelection) => void }) {
   useLocale()
+  if (result.mode === 'navigation') return <div className="workspace-chat-answer">
+    <div className="workspace-chat-speaker"><MessageSquare size={17} aria-hidden="true" />Soyle</div>
+    <p>{result.answer || (result.meetings.length ? t('Выберите встречу для открытия') : t('Здесь будут ваши встречи'))}</p>
+    <div className="workspace-chat-citations">{result.meetings.map((meeting) => <button type="button" className="workspace-chat-board-source" key={meeting.id}
+      onClick={() => onOpenMeeting({ meetingId: meeting.id, title: meeting.title, view: result.view, quotes: [] })}>
+      <CalendarDays size={20} aria-hidden="true" /><span className="chat-source-copy"><strong>{meeting.title}</strong></span><ArrowRight size={17} aria-hidden="true" />
+    </button>)}</div>
+  </div>
   if (result.mode === 'assistant') return <div className="workspace-chat-answer">
     <div className="workspace-chat-speaker"><MessageSquare size={17} aria-hidden="true" />Soyle</div>
     <p className="workspace-assistant-text">{result.answer}</p>
@@ -175,7 +183,7 @@ function ConversationPanel({ conversationId, title }: { conversationId: string; 
       for (const turn of detail?.turns ?? []) {
         if (turn.result.mode === 'pending') { awaitedPanels.current.add(turn.id); continue }
         if (turn.result.mode === 'failed' || !awaitedPanels.current.delete(turn.id)) continue
-        if (turn.result.mode !== 'meetings' && turn.result.mode !== 'tasks') continue
+        if (turn.result.mode !== 'meetings' && turn.result.mode !== 'tasks' && turn.result.mode !== 'navigation') continue
         const selection = assistantPanel(turn.result)
         if (selection) setOpenedMeeting(selection)
       }

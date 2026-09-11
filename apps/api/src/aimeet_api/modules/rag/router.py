@@ -19,6 +19,7 @@ from aimeet_api.modules.rag.conversations import (
 )
 from aimeet_api.modules.rag.indexing import enqueue
 from aimeet_api.modules.rag.models import RagEdge, RagIndex, RagNode
+from aimeet_api.modules.rag.navigation import resolve_panel
 from aimeet_api.modules.rag.providers import Providers, RagError
 from aimeet_api.modules.rag.retrieval import retrieve
 from aimeet_api.modules.rag.schemas import (
@@ -35,6 +36,7 @@ from aimeet_api.modules.rag.schemas import (
     GraphEdge,
     GraphNode,
     IndexStatus,
+    NavigationResult,
     Question,
     RagConfiguration,
     SearchResult,
@@ -375,3 +377,15 @@ def chat(
     if current.id != index_id:
         raise RagError("SOURCE_CHANGED", 409)
     return result
+
+
+@router.post(
+    "/assistant/panel",
+    response_model=NavigationResult,
+    dependencies=[Depends(require_csrf)],
+    operation_id="resolveAssistantPanel",
+)
+def assistant_panel(
+    payload: AssistantQuestion, user: CurrentUser, db: DatabaseDep, providers: ProviderDep
+):
+    return resolve_panel(db, user.workspace_id, payload, providers)

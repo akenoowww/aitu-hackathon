@@ -5,6 +5,10 @@ import type { ChatMeetingSelection } from '../components/rag/chat-meeting-panel'
 export function assistantPanel(result: AssistantResult): ChatMeetingSelection | null {
   if (result.mode === 'assistant' || !result.panel) return null
   const { meeting_id: meetingId, view } = result.panel
+  if (result.mode === 'navigation') {
+    const target = result.meetings.find((meeting) => meeting.id === meetingId)
+    return target ? { meetingId, title: target.title, view, quotes: [] } : null
+  }
   if (result.mode === 'tasks') {
     if (result.status !== 'created') return null
     const task = result.tasks.find((task) => task.meeting_id === meetingId)

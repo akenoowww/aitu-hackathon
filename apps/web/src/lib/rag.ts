@@ -67,15 +67,17 @@ const taskCreationSchema = z.object({
     board_version: z.number().int(), title: z.string(), description: z.string(),
     assignee: z.string().nullable(), due_date: z.string().nullable(), due_text: z.string().nullable() })),
 }) satisfies z.ZodType<components['schemas']['TaskCreationResult']>
+const navigationSchema = z.object({ mode: z.literal('navigation'), answer: z.string(), view: z.enum(['kanban', 'insights', 'conversation']), panel: panelActionSchema, meetings: z.array(z.object({ id: z.uuid(), title: z.string() })) })
 export const assistantResultSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('assistant'), answer: z.string() }),
   workspaceAnswerSchema.extend({ mode: z.literal('meetings') }),
   taskCreationSchema.extend({ mode: z.literal('tasks') }),
+  navigationSchema,
 ])
 export type AssistantResult = z.infer<typeof assistantResultSchema>
 
 const assistantDecisionSchema = z.object({
-  action: z.enum(['reply', 'search_meetings', 'create_tasks']), answer: z.string(), search_query: z.string(),
+  action: z.enum(['reply', 'search_meetings', 'create_tasks', 'open_panel']), answer: z.string(), search_query: z.string(),
 }) satisfies z.ZodType<components['schemas']['AssistantDecision']>
 
 export async function talkToAssistant(question: string, history: ConversationMessage[], signal: AbortSignal,
@@ -83,6 +85,7 @@ export async function talkToAssistant(question: string, history: ConversationMes
   const decision = operation.retryTask ? { action: 'create_tasks' as const, answer: '', search_query: '' }
     : await streamRequest('/assistant/chat/stream', assistantDecisionSchema, { question, history }, signal, operation.onDelta)
   if (decision.action === 'reply') return { mode: 'assistant', answer: decision.answer }
+  if (decision.action === 'open_panel') return request('/assistant/panel', navigationSchema, { question: decision.search_query || question, history }, signal)
   if (decision.action === 'create_tasks') {
     await operation.onTaskStart()
     const result = await request('/assistant/tasks', taskCreationSchema, { question, history, request_id: operation.id, conversation_id: operation.conversationId }, signal)
