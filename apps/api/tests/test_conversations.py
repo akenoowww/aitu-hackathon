@@ -89,3 +89,64 @@ def test_conversation_auth_validation_and_create_idempotency(client, authenticat
     client.headers["X-Requested-With"] = "aimeet"
     client.post("/api/v1/auth/logout")
     assert client.get("/api/v1/assistant/conversations").status_code == 401
+
+
+def test_question_is_persisted_before_answer_and_completed_once(authenticated_client):
+    client = authenticated_client
+    cid = create(client)
+    payload = {
+        "id": str(uuid.uuid4()),
+        "question": "Долгий вопрос",
+        "state": "pending",
+        "activity": "thinking",
+    }
+    started = client.post(f"/api/v1/assistant/conversations/{cid}/turns/pending", json=payload)
+    assert started.status_code == 200, started.text
+    saved = client.get(f"/api/v1/assistant/conversations/{cid}").json()
+    assert saved["title"] == "Долгий вопрос"
+    assert len(saved["turns"]) == 1
+    assert saved["turns"][0]["result"]["mode"] == "pending"
+    done = client.post(
+        f"/api/v1/assistant/conversations/{cid}/turns",
+        json={
+            "id": payload["id"],
+            "question": payload["question"],
+            "result": {"mode": "assistant", "answer": "Готовый ответ"},
+        },
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["created_at"] == started.json()["created_at"]
+    # Late progress/failure and duplicate responses cannot overwrite the completed answer.
+    late = client.post(
+        f"/api/v1/assistant/conversations/{cid}/turns/pending", json={**payload, "state": "failed"}
+    )
+    assert late.json()["result"]["answer"] == "Готовый ответ"
+    again = client.post(
+        f"/api/v1/assistant/conversations/{cid}/turns",
+        json={
+            "id": payload["id"],
+            "question": payload["question"],
+            "result": {"mode": "assistant", "answer": "Повторный ответ"},
+        },
+    )
+    assert again.json()["result"]["answer"] == "Готовый ответ"
+    assert len(client.get(f"/api/v1/assistant/conversations/{cid}").json()["turns"]) == 1
+
+
+def test_pending_creation_stage_survives_failure_and_resume(authenticated_client):
+    client = authenticated_client
+    cid = create(client)
+    payload = {"id": str(uuid.uuid4()), "question": "Создай задачу", "activity": "creating"}
+    path = f"/api/v1/assistant/conversations/{cid}/turns/pending"
+    assert client.post(path, json=payload).status_code == 200
+    failed = client.post(path, json={**payload, "state": "failed"})
+    assert failed.json()["result"]["mode"] == "failed"
+    resumed = client.post(path, json={**payload, "activity": "thinking"})
+    assert resumed.json()["result"] == {"mode": "pending", "answer": "", "activity": "creating"}
+    other = create(client)
+    assert (
+        client.post(
+            f"/api/v1/assistant/conversations/{other}/turns/pending", json=payload
+        ).status_code
+        == 409
+    )

@@ -43,6 +43,7 @@ class AssistantDecision(BaseModel):
 
 class TaskCreationRequest(AssistantQuestion):
     request_id: uuid.UUID
+    conversation_id: uuid.UUID | None = None
 
 
 class AssistantTaskDraft(BaseModel):
@@ -279,7 +280,23 @@ class ConversationTurnInput(Question):
         return value
 
 
-class ConversationTurnOutput(ConversationTurnInput):
+class PendingChatResult(BaseModel):
+    mode: Literal["pending", "failed"]
+    answer: Literal[""] = ""
+    activity: Literal["thinking", "creating"] = "thinking"
+
+
+class ConversationTurnStart(Question):
+    id: uuid.UUID
+    state: Literal["pending", "failed"] = "pending"
+    activity: Literal["thinking", "creating"] = "thinking"
+
+
+class ConversationTurnOutput(Question):
+    id: uuid.UUID
+    result: GeneralChatResult | MeetingChatResult | TaskChatResult | PendingChatResult = Field(
+        discriminator="mode"
+    )
     created_at: datetime
 
 

@@ -1,7 +1,7 @@
 """Private, persisted assistant conversations; completed turns are idempotent."""
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from aimeet_api.db.models import utcnow
@@ -85,6 +85,18 @@ def save_turn(db, user, conversation_id, payload):
     if existing:
         if existing.conversation_id != conversation_id or existing.question != payload.question:
             raise HTTPException(409, "Turn already used")
+        if existing.result.get("mode") in {"pending", "failed"}:
+            db.execute(
+                update(AssistantConversationTurn)
+                .where(
+                    AssistantConversationTurn.id == payload.id,
+                    AssistantConversationTurn.result["mode"].as_string().in_(["pending", "failed"]),
+                )
+                .values(result=payload.result.model_dump(mode="json"))
+            )
+            conversation.updated_at = utcnow()
+            db.commit()
+            db.refresh(existing)
         return turn_output(existing)
     # Results are private conversation snapshots supplied by this user, not authoritative
     # evidence for future meeting answers; the assistant always rechecks meeting facts.
@@ -95,6 +107,52 @@ def save_turn(db, user, conversation_id, payload):
         result=payload.result.model_dump(mode="json"),
     )
     db.add(turn)
+    conversation.updated_at = utcnow()
+    if conversation.title == "Новый чат":
+        conversation.title = " ".join(payload.question.split())[:100]
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.get(AssistantConversationTurn, payload.id)
+        if (
+            existing
+            and existing.conversation_id == conversation_id
+            and existing.question == payload.question
+        ):
+            return turn_output(existing)
+        raise HTTPException(409, "Turn conflict") from None
+    db.refresh(turn)
+    return turn_output(turn)
+
+
+def start_turn(db, user, conversation_id, payload):
+    conversation = owned_conversation(db, user, conversation_id)
+    existing = db.get(AssistantConversationTurn, payload.id)
+    if existing and (
+        existing.conversation_id != conversation_id or existing.question != payload.question
+    ):
+        raise HTTPException(409, "Turn already used")
+    result = {"mode": payload.state, "answer": "", "activity": payload.activity}
+    if existing:
+        if existing.result.get("mode") not in {"pending", "failed"}:
+            return turn_output(existing)
+        if existing.result.get("activity") == "creating":
+            result["activity"] = "creating"
+        db.execute(
+            update(AssistantConversationTurn)
+            .where(
+                AssistantConversationTurn.id == payload.id,
+                AssistantConversationTurn.result["mode"].as_string().in_(["pending", "failed"]),
+            )
+            .values(result=result)
+        )
+        turn = existing
+    else:
+        turn = AssistantConversationTurn(
+            id=payload.id, conversation_id=conversation_id, question=payload.question, result=result
+        )
+        db.add(turn)
     conversation.updated_at = utcnow()
     if conversation.title == "Новый чат":
         conversation.title = " ".join(payload.question.split())[:100]

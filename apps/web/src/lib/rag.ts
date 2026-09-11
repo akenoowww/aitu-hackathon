@@ -75,20 +75,20 @@ const assistantDecisionSchema = z.object({
 }) satisfies z.ZodType<components['schemas']['AssistantDecision']>
 
 export async function talkToAssistant(question: string, history: ConversationMessage[], signal: AbortSignal,
-  operation: { id: string; retryTask: boolean; onTaskStart: () => void }): Promise<AssistantResult> {
+  operation: { id: string; conversationId: string; retryTask: boolean; onTaskStart: () => void | Promise<void> }): Promise<AssistantResult> {
   const decision = operation.retryTask ? { action: 'create_tasks' as const, answer: '', search_query: '' }
     : await request('/assistant/chat', assistantDecisionSchema, { question, history }, signal)
   if (decision.action === 'reply') return { mode: 'assistant', answer: decision.answer }
   if (decision.action === 'create_tasks') {
-    operation.onTaskStart()
-    const result = await request('/assistant/tasks', taskCreationSchema, { question, history, request_id: operation.id }, signal)
+    await operation.onTaskStart()
+    const result = await request('/assistant/tasks', taskCreationSchema, { question, history, request_id: operation.id, conversation_id: operation.conversationId }, signal)
     return result.status === 'clarification' ? { mode: 'assistant', answer: result.answer } : { ...result, mode: 'tasks' }
   }
   const result = await searchWorkspace(decision.search_query, signal, () => {})
   return { ...result, mode: 'meetings' }
 }
 
-async function request<T>(path: string, schema: z.ZodType<T>, question?: string | { question: string; history: ConversationMessage[]; request_id?: string } | null, signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, schema: z.ZodType<T>, question?: string | { question: string; history: ConversationMessage[]; request_id?: string; conversation_id?: string } | null, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: question === undefined ? 'GET' : 'POST', credentials: 'include', cache: 'no-store', signal,
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aimeet' },

@@ -14,6 +14,7 @@ from aimeet_api.modules.rag.conversations import (
     list_conversations,
     read_conversation,
     save_turn,
+    start_turn,
 )
 from aimeet_api.modules.rag.indexing import enqueue
 from aimeet_api.modules.rag.models import RagEdge, RagIndex, RagNode
@@ -28,6 +29,7 @@ from aimeet_api.modules.rag.schemas import (
     ConversationSummary,
     ConversationTurnInput,
     ConversationTurnOutput,
+    ConversationTurnStart,
     Graph,
     GraphEdge,
     GraphNode,
@@ -117,6 +119,18 @@ def conversation_save_turn(
     conversation_id: uuid.UUID, payload: ConversationTurnInput, user: CurrentUser, db: DatabaseDep
 ):
     return save_turn(db, user, conversation_id, payload)
+
+
+@router.post(
+    "/assistant/conversations/{conversation_id}/turns/pending",
+    response_model=ConversationTurnOutput,
+    dependencies=[Depends(require_csrf)],
+    operation_id="startAssistantTurn",
+)
+def conversation_start_turn(
+    conversation_id: uuid.UUID, payload: ConversationTurnStart, user: CurrentUser, db: DatabaseDep
+):
+    return start_turn(db, user, conversation_id, payload)
 
 
 def get_meeting(db, user, meeting_id):

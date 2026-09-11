@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Anchor, Badge, Button, Modal, Text, Title } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Modal, Text, Title } from '@mantine/core'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import { meetingQuery, queryClient } from '../lib/query'
@@ -18,6 +18,13 @@ export function MeetingDetailPage() {
   const meeting = useQuery(meetingQuery(meetingId))
   const [dialogOpen, setDialogOpen] = useState(false)
   const deleteTrigger = useRef<HTMLButtonElement>(null)
+  const cancel = useMutation({
+    mutationFn: () => api.cancelTranscription(meetingId),
+    onSuccess: async (result) => {
+      queryClient.setQueryData(meetingQuery(meetingId).queryKey, result)
+      await queryClient.invalidateQueries({ queryKey: ['meetings', 'list'] })
+    },
+  })
   const remove = useMutation({
     mutationFn: () => api.deleteMeeting(meetingId),
     onSuccess: async () => {
@@ -41,7 +48,10 @@ export function MeetingDetailPage() {
     <Anchor className="page-back" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}><ArrowLeft size={19} aria-hidden="true" />К встречам</Anchor>
     <header className="live-room-heading saved-meeting-header">
       <div><Title order={1}>{meeting.data.title}</Title><Text className="live-status" c="dimmed"><span className="live-status-dot" />{meeting.data.source_type === 'audio' ? 'Запись встречи' : 'Сохранённая встреча'}<Badge color="gray" variant="light" radius="xl" tt="none">{meetingStatus(meeting.data)}</Badge></Text></div>
-      <Button ref={deleteTrigger} variant="light" color="red" leftSection={<Trash2 size={18} aria-hidden="true" />} onClick={() => setDialogOpen(true)}>Удалить встречу</Button>
+      <Group gap="sm" className="saved-meeting-actions">
+        {['queued', 'running'].includes(meeting.data.transcription?.status ?? '') && <Button variant="default" color="gray" loading={cancel.isPending} onClick={() => cancel.mutate()}>Отменить распознавание</Button>}
+        <Button ref={deleteTrigger} variant="light" color="red" leftSection={<Trash2 size={18} aria-hidden="true" />} onClick={() => setDialogOpen(true)}>Удалить встречу</Button>
+      </Group>
       <Modal.Root opened={dialogOpen} onClose={closeDialog} centered size={460} closeOnClickOutside={false} closeOnEscape={!remove.isPending}
         returnFocus onExitTransitionEnd={() => { if (!remove.isSuccess) deleteTrigger.current?.focus() }}>
         <Modal.Overlay />
@@ -58,6 +68,7 @@ export function MeetingDetailPage() {
         </Modal.Content>
       </Modal.Root>
     </header>
+    {cancel.isError && <InlineError>{errorMessage(cancel.error, 'Не удалось отменить распознавание. Попробуйте ещё раз.')}</InlineError>}
     <MeetingWorkspace key={meetingId} meeting={meeting.data} view={view}
       onViewChange={(next: MeetingView) => { void navigate({ to: '/meetings/$meetingId', params: { meetingId }, search: { view: next }, replace: true }) }} />
   </div>

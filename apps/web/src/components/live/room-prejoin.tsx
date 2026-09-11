@@ -21,7 +21,7 @@ export function RoomPrejoin({ room, grant, invite, onJoin }: {
     <Text c="dimmed">{room.status === 'active' ? 'Голосовая встреча · без камеры' : 'Встреча завершена'}</Text>
     {room.status !== 'active' && !grant ? <Text mt="lg" c="dimmed">Войти в завершённую встречу уже нельзя. За итогами обратитесь к организатору.</Text> : <form onSubmit={submit}><Stack gap="lg">
       {!grant && <TextInput label="Как вас представить?" value={name} onChange={(event) => setName(event.currentTarget.value)} maxLength={80} required autoComplete="name" />}
-      <Text size="sm" c="dimmed">Речь будет преобразована в текст локально. Текст доступен участникам комнаты и передаётся в OpenAI для анализа.</Text>
+      <Text size="sm" c="dimmed">Разговор записывается. Аудиозапись и стенограмма сохранятся у организатора. Речь преобразуется в текст локально; текст доступен участникам комнаты и передаётся в OpenAI для анализа.</Text>
       {join.isError && <InlineError>{liveError(join.error)}</InlineError>}
       <Button type="submit" leftSection={<Mic size={18} />} disabled={!grant && !name.trim()} loading={join.isPending}>{room.status === 'active' ? 'Войти в разговор' : 'Открыть итоги'}</Button>
     </Stack></form>}

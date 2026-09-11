@@ -5,6 +5,7 @@ import { ArrowRight, AudioLines, Check, CheckSquare, CircleHelp, Lightbulb, List
 import type { MeetingDetail } from '../lib/contracts'
 import { boardApi, boardError, type Evidence } from '../lib/board'
 import { resolveMeetingEvidence, transcriptSegmentRanges } from '../lib/meeting-evidence'
+import { clipsForEvidence, retryMeetingRecording, useMeetingAudio } from '../lib/meeting-audio'
 import { timestamp } from '../lib/transcription'
 import { Transcription } from './transcription'
 import { MeetingBoard } from './board/meeting-board'
@@ -29,15 +30,21 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
   const cache = useQueryClient()
   const pane = useRef<HTMLDivElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
+  useEffect(() => { const player = audio.current; return () => player?.pause() }, [view])
   const pendingSeek = useRef<number | null>(null)
   const [focusedSource, setFocusedSource] = useState<Evidence | null>(null)
   const [openedSource, setOpenedSource] = useState<Evidence | null>(null)
+  const [playOnOpen, setPlayOnOpen] = useState(false)
   const following = useRef(true)
   const savedScroll = useRef<Record<MeetingView, number>>({ conversation: 0, insights: 0, kanban: 0 })
   const quoteTarget = useRef<{ quote: string; evidence: Evidence | null } | null>(null)
   const isAudio = meeting.source_type === 'audio'
+  const recording = useMeetingAudio(meeting)
+  const canPlayFull = isAudio || recording.data?.full_audio_available === true
+  const retryRecording = useMutation({ mutationFn: () => retryMeetingRecording(meeting.id),
+    onSuccess: () => cache.invalidateQueries({ queryKey: ['meeting-audio', meeting.id] }) })
   const processing = ['queued', 'running'].includes(meeting.transcription?.status ?? '')
-  const recognized = isAudio ? meeting.status === 'transcribed' : !!meeting.transcript.trim()
+  const recognized = !!meeting.transcript.trim() && (!isAudio || meeting.status === 'transcribed')
   const board = useQuery({ queryKey: ['board', meeting.id], queryFn: ({ signal }) => boardApi.get(meeting.id, signal),
     refetchInterval: (query) => processing || ['queued', 'running'].includes(query.state.data?.status ?? '') ? 1500 : false })
   useEffect(() => { if (recognized) void cache.invalidateQueries({ queryKey: ['board', meeting.id] }) }, [recognized, meeting.id, cache])
@@ -59,6 +66,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
     setFocusedSource(evidence)
     changeView('conversation')
   }
+  function openSource(evidence: Evidence, play = false) { audio.current?.pause(); setPlayOnOpen(play); setOpenedSource(evidence) }
   useEffect(() => {
     const element = pane.current
     if (!element) return
@@ -92,7 +100,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
   }, [processing, segments.length, view])
 
   return <section className="meeting-workspace" aria-label="Рабочее пространство встречи">
-    {isAudio && (processing || analyzing || !recognized) && <div className="meeting-processing no-print">
+    {isAudio && (processing || analyzing || (!recognized && meeting.status !== 'transcribed')) && <div className="meeting-processing no-print">
       <div className="audio-processing-header">
         <div className={`audio-processing-icon ${processing || analyzing ? 'is-processing' : ''}`} aria-hidden="true">{complete ? <Check size={23} /> : <AudioLines size={23} />}</div>
         <div className="audio-processing-copy">
@@ -112,11 +120,16 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
       <div className={`live-focus-pane saved-meeting-pane ${view === 'kanban' ? 'is-kanban' : ''}`} ref={pane}
         onScroll={(event) => { const element = event.currentTarget; savedScroll.current[view] = element.scrollTop; if (view === 'conversation') following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80 }}>
         <Tabs.Panel value="conversation" className="saved-conversation">
-          {isAudio && <div className="audio-source"><audio ref={audio} controls preload="none" aria-label="Аудиозапись встречи" src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`}
+          {canPlayFull && <div className="audio-source"><Text size="sm" fw={500} mb="xs">Запись всей беседы</Text><audio ref={audio} controls preload="none" aria-label="Аудиозапись встречи" src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`}
             onLoadedMetadata={() => { if (audio.current && pendingSeek.current !== null) { audio.current.currentTime = pendingSeek.current; pendingSeek.current = null } }} /></div>}
+          {['queued', 'processing'].includes(recording.data?.recording_status ?? '') && <Text size="sm" role="status" mb="md">Сохраняем полную аудиозапись беседы…</Text>}
+          {recording.data?.source === 'live' && !canPlayFull && recording.data.recording_status === 'none' && <Text size="sm" c="dimmed" mb="md">Полная аудиозапись этой беседы не сохранилась.</Text>}
+          {recording.data?.recording_status === 'failed' && <InlineError>Не удалось собрать полную запись. <Button variant="subtle" loading={retryRecording.isPending} onClick={() => retryRecording.mutate()}>Повторить сохранение</Button></InlineError>}
+          {retryRecording.isError && <InlineError>Не удалось повторить сохранение. Обновите страницу и попробуйте ещё раз.</InlineError>}
           <section aria-label="Стенограмма разговора" data-testid="meeting-conversation">
             {segments.length ? segments.map((segment, index) => <article data-transcript-segment data-start={segment.start} data-end={segment.end} data-start-char={ranges[index]?.start} data-end-char={ranges[index]?.end} tabIndex={-1} key={`${index}-${segment.start}`} className="live-utterance saved-utterance">
               <Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text><Text className="live-utterance-text"><SourceHighlight text={segment.text} offset={ranges[index]?.start} selection={focusedSource} /></Text>
+              {ranges[index] && (canPlayFull || (recording.data?.clips ?? []).some((clip) => clip.available && clip.start_char < ranges[index].end && clip.end_char > ranges[index].start)) && <Button variant="subtle" size="compact-sm" mt="xs" onClick={() => openSource({ quote: segment.text, start_char: ranges[index].start, end_char: ranges[index].end, start_seconds: segment.start, end_seconds: segment.end, speaker: null }, true)}>Прослушать реплику</Button>}
             </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}><SourceHighlight text={meeting.transcript} offset={0} selection={focusedSource} /></div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>Здесь появится разговор</Title><Text c="dimmed">{processing ? 'Первые реплики появятся по мере распознавания записи.' : 'Распознайте запись, чтобы прочитать стенограмму.'}</Text></div>}
             {processing && segments.length > 0 && <Text className="audio-feed-continuation" size="sm" c="dimmed">Продолжаем распознавать…</Text>}
           </section>
@@ -129,8 +142,13 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
             {board.data.status === 'failed' && <InlineError>{boardError(board.data.error_code)} Промежуточные выводы могут быть неполными.</InlineError>}
             <Stack gap="md">{notes.map((card) => {
               const kind = noteKinds[card.kind]; const Icon = kind.icon
+              const evidence = card.quote ? resolveMeetingEvidence(meeting, card.quote, card.evidence, card.start_char) : null
+              const matching = clipsForEvidence(recording.data?.clips ?? [], evidence)
+              const playable = evidence !== null && ((canPlayFull && evidence.start_seconds !== null) || matching.some((clip) => clip.available))
               return <article className="live-note saved-insight-note" key={card.id}><div className="live-note-icon"><Icon size={24} aria-hidden="true" /></div><div className="live-note-copy"><Text className="live-note-kind">{kind.label}</Text><Text className="live-note-text">{card.title}</Text>{card.description && <Text size="sm" c="dimmed" mt="xs">{card.description}</Text>}
-                {card.quote && <SavedSource quote={card.quote} evidence={resolveMeetingEvidence(meeting, card.quote, card.evidence, card.start_char)} onConversation={source} onOpen={setOpenedSource} />}</div>
+                {card.quote && <SavedSource quote={card.quote} evidence={evidence} onConversation={source} onOpen={openSource}
+                  onListen={playable && evidence ? () => openSource(evidence, true) : undefined}
+                  audioMissing={!playable && matching.length > 0 && ['none', 'ready', 'failed'].includes(recording.data?.recording_status ?? '')} />}</div>
               </article>
             })}</Stack>
             {!notes.length && <div className="live-empty"><Sparkles size={29} aria-hidden="true" /><Title order={2}>{processing ? 'Сначала распознаем разговор' : analyzing ? 'Готовим первые итоги' : 'Итогов пока нет'}</Title><Text c="dimmed">Здесь появятся темы, решения, поручения и открытые вопросы встречи.</Text></div>}
@@ -144,7 +162,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
         </Tabs.Panel>
       </div>
     </Tabs>
-    {openedSource && <MeetingEvidence key={`${openedSource.start_char}:${openedSource.end_char}`} meeting={meeting} evidence={openedSource} onClose={() => setOpenedSource(null)} />}
+    {openedSource && <MeetingEvidence key={`${openedSource.start_char}:${openedSource.end_char}`} meeting={meeting} evidence={openedSource} autoplay={playOnOpen} onClose={() => setOpenedSource(null)} />}
   </section>
 }
 
@@ -157,15 +175,17 @@ function SourceHighlight({ text, offset, selection }: { text: string; offset?: n
   return <>{characters.slice(0, start).join('')}<mark className="meeting-source-highlight">{characters.slice(start, end).join('')}</mark>{characters.slice(end).join('')}</>
 }
 
-function SavedSource({ quote, evidence, onConversation, onOpen }: {
-  quote: string; evidence: Evidence | null; onConversation: (quote: string, evidence: Evidence | null) => void; onOpen: (evidence: Evidence) => void
+function SavedSource({ quote, evidence, onConversation, onOpen, onListen, audioMissing }: {
+  quote: string; evidence: Evidence | null; onConversation: (quote: string, evidence: Evidence | null) => void; onOpen: (evidence: Evidence) => void; onListen?: () => void; audioMissing?: boolean
 }) {
   return <div className="saved-insight-source">
     <Text size="xs" c="dimmed">Из разговора{evidence?.speaker ? ` · ${evidence.speaker}` : ''}{evidence?.start_seconds !== null && evidence?.start_seconds !== undefined ? ` · ${timestamp(evidence.start_seconds)}` : ''}</Text>
     <blockquote>{quote}</blockquote>
     <Group gap="md" wrap="wrap">
+      {onListen && <Button variant="light" size="compact-sm" onClick={onListen}>Прослушать момент</Button>}
       {evidence && <Button variant="subtle" size="compact-sm" onClick={() => onOpen(evidence)}>Открыть фрагмент</Button>}
       <Anchor component="button" className="live-source-link" onClick={() => onConversation(quote, evidence)}>К разговору<ArrowRight size={15} aria-hidden="true" /></Anchor>
     </Group>
+    {audioMissing && <Text size="xs" c="dimmed">Аудио этого момента не сохранилось.</Text>}
   </div>
 }

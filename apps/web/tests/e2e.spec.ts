@@ -17,9 +17,14 @@ function conversationStore() {
     if (parts[5] === 'turns') {
       const data = route.request().postDataJSON();
       const existing = chat.turns.find((t) => t.id === data.id);
-      if (existing) return route.fulfill({ json: existing });
-      const saved = { ...data, created_at: new Date().toISOString() };
-      chat.turns.push(saved);
+      const oldResult = existing?.result as { mode: string; activity?: string } | undefined;
+      if (existing && oldResult?.mode !== 'pending' && oldResult?.mode !== 'failed') return route.fulfill({ json: existing });
+      const result = parts[6] === 'pending'
+        ? { mode: data.state, answer: '', activity: oldResult?.activity === 'creating' ? 'creating' : data.activity }
+        : data.result;
+      const saved = { id: data.id, question: data.question, result, created_at: existing?.created_at ?? new Date().toISOString() };
+      if (existing) chat.turns = chat.turns.map((item) => item.id === saved.id ? saved : item);
+      else chat.turns.push(saved);
       if (chat.title === 'Новый чат') chat.title = data.question;
       return route.fulfill({ json: saved });
     }
@@ -297,7 +302,7 @@ test('workspace chat searches existing meetings without manual preparation', asy
   await expect(page.getByRole('link', { name: 'Открыть встречу' })).toHaveAttribute('href', `/meetings/${meetingId}`);
   await page.getByRole('textbox', { name: 'Сообщение ассистенту' }).fill('Какой бюджет?');
   await send.click();
-  await expect(page.locator('.workspace-chat-turn')).toHaveCount(2);
+  await expect(page.getByText('Обсуждали на планировании.', { exact: true })).toHaveCount(2);
   expect(searches).toBe(2);
   expect(indexRequests).toBe(1);
   await page.getByRole('textbox', { name: 'Сообщение ассистенту' }).fill('у нас вообще встречи были?');
@@ -471,7 +476,12 @@ test('assistant chats with history and helps without touching meeting search', a
         answer = 'Вас зовут Алия.';
       }
       if (messages === 3) answer = 'Откройте «Встречи» и нажмите «Загрузить аудио».';
-      if (messages === 4) expect(body.history).toEqual([]);
+      if (messages === 4) { expect(body.history).toEqual([]); answer = 'Привет! Чем могу помочь?'; }
+      if (messages === 5) {
+        expect(body.history[0].content).toBe('Привет, меня зовут Алия');
+        expect(body.history).toHaveLength(6);
+        answer = 'В этом чате вы представились как Алия.';
+      }
       return route.fulfill({ json: { action: 'reply', answer, search_query: '' } });
     }
     throw new Error(`Conversation must not access meetings or embeddings: ${path}`);
@@ -491,10 +501,20 @@ test('assistant chats with history and helps without touching meeting search', a
   await send.click();
   await expect(page.getByText('Откройте «Встречи» и нажмите «Загрузить аудио».', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Новый чат', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
   await input.fill('Привет');
   await send.click();
-  await expect(page.getByText('Привет, Алия! Чем помочь?', { exact: true })).toBeVisible();
-  expect(messages).toBe(4);
+  await expect(page.getByText('Привет! Чем могу помочь?', { exact: true })).toBeVisible();
+  const chatList = page.getByRole('navigation', { name: 'Список чатов' });
+  await chatList.getByRole('button', { name: 'Привет, меня зовут Алия', exact: true }).click();
+  await expect(page.getByText('Вас зовут Алия.', { exact: true })).toBeVisible();
+  await expect(page.getByText('Привет! Чем могу помочь?', { exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByText('Вас зовут Алия.', { exact: true })).toBeVisible();
+  await input.fill('Что ты обо мне знаешь?');
+  await send.click();
+  await expect(page.getByText('В этом чате вы представились как Алия.', { exact: true })).toBeVisible();
+  expect(messages).toBe(5);
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);
 });
@@ -718,8 +738,8 @@ test('assistant cites outcomes and shows real task creation progress with safe r
   await page.screenshot({ path: testInfo.outputPath('assistant-creating.png'), fullPage: true });
   finishFirstWrite!();
   await expect(page.getByRole('alert')).toBeVisible();
-  await expect(input).toHaveValue('Добавь задачу проверить фронтенд');
-  await send.click();
+  await expect(page.getByRole('heading', { name: 'Добавь задачу проверить фронтенд', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Повторить отправку' }).click();
   await expect(page.getByText('Добавлено задач в канбан: 1.', { exact: true })).toBeVisible();
   await expect(page.locator('.workspace-chat-created-task')).toContainText('Проверить фронтенд');
   await expect(page.locator('.workspace-chat-created-task')).toHaveAttribute('href', new RegExp(`/meetings/${meetingId}\\?view=kanban`));
@@ -848,4 +868,242 @@ test('kanban drag and drop saves status and category, cancels and rolls back fai
   expect(writes[4].status).toBe('done');
   await cdp.detach();
   expect(errors).toEqual([]);
+});
+
+for (const audioAvailable of [true, false]) {
+  test(`saved call ${audioAvailable ? 'plays full recording and individual utterances' : 'reports missing historical audio'}`, async ({ page }) => {
+    const mid = 'b5c49628-3e54-4bd3-a2d1-7159b4891fc0';
+    const cid = '1b0c23e9-03cc-49c6-9532-db1505fdc6ed';
+    const quote = 'Проверочная реплика.';
+    const transcript = `[00:02] Алия: ${quote}`;
+    const start = Array.from('[00:02] Алия: ').length;
+    function wav(seconds: number) {
+      const samples = seconds * 16000;
+      const bytes = Buffer.alloc(44 + samples * 2);
+      bytes.write('RIFF', 0); bytes.writeUInt32LE(36 + samples * 2, 4); bytes.write('WAVEfmt ', 8);
+      bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22);
+      bytes.writeUInt32LE(16000, 24); bytes.writeUInt32LE(32000, 28); bytes.writeUInt16LE(2, 32);
+      bytes.writeUInt16LE(16, 34); bytes.write('data', 36); bytes.writeUInt32LE(samples * 2, 40);
+      for (let i = 0; i < samples; i++) bytes.writeInt16LE(Math.round(800 * Math.sin(2 * Math.PI * 440 * i / 16000)), 44 + i * 2);
+      return bytes;
+    }
+    await page.route('**/api/v1/**', async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'fixture@example.com', display_name: 'Проверка' } });
+      if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: {
+        id: mid, title: 'ТЕСТ записи звонка', language: 'ru', status: 'transcribed', source_type: audioAvailable ? 'audio' : 'text',
+        created_at: '2026-09-11T10:00:00Z', updated_at: '2026-09-11T10:00:00Z',
+        transcript, transcript_length: transcript.length, audio_filename: audioAvailable ? 'Беседа.wav' : null, audio_bytes: audioAvailable ? 256044 : null,
+        transcription: null, segments: [{ start: 2, end: 3, text: `Алия: ${quote}` }],
+      } });
+      if (path.endsWith('/audio-clips')) return route.fulfill({ json: {
+        source: 'live', full_audio_available: audioAvailable, recording_status: audioAvailable ? 'ready' : 'none',
+        clips: [{ id: cid, speaker: 'Алия', start: 2, end: 3, start_char: start, end_char: start + Array.from(quote).length, available: audioAvailable }],
+      } });
+      if (path.endsWith('/audio') || path.endsWith(`/audio-clips/${cid}`)) {
+        if (!audioAvailable) return route.fulfill({ status: 404, json: {} });
+        const body = wav(path.endsWith('/audio') ? 8 : 1);
+        const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers()['range'] ?? '');
+        const startByte = range ? Number(range[1]) : 0;
+        const endByte = range?.[2] ? Math.min(Number(range[2]), body.length - 1) : body.length - 1;
+        return route.fulfill({ status: range ? 206 : 200, contentType: 'audio/wav',
+          headers: { 'Accept-Ranges': 'bytes', ...(range ? { 'Content-Range': `bytes ${startByte}-${endByte}/${body.length}` } : {}) },
+          body: body.subarray(startByte, endByte + 1) });
+      }
+      if (path.endsWith('/board')) return route.fulfill({ json: {
+        version: 1, status: 'ready', progress: 100, error_code: null, summary: [], cards: [{
+          id: cid, kind: 'topic', title: 'Проверить запись беседы', description: '', assignee: null, due_date: null, due_text: null, priority: 'unspecified',
+          status: 'todo', reviewed: false, quote, quote_start: start, start_char: start, end_char: start + Array.from(quote).length,
+          agreement: 'unclear', origin: 'ai', evidence: null, revisions: [], clarifications: [],
+        }],
+      } });
+      return route.fulfill({ status: 404, json: {} });
+    });
+    await page.goto(`/meetings/${mid}?view=conversation`);
+    const full = page.locator('audio[aria-label="Аудиозапись встречи"]');
+    if (audioAvailable) {
+      await expect(page.getByText('Запись всей беседы', { exact: true })).toBeVisible();
+      await full.evaluate(async (audio: HTMLAudioElement) => { await audio.play() });
+      await expect.poll(() => full.evaluate((audio: HTMLAudioElement) => audio.duration)).toBe(8);
+      await full.evaluate((audio: HTMLAudioElement) => { audio.currentTime = 6; audio.pause() });
+      await expect.poll(() => full.evaluate((audio: HTMLAudioElement) => audio.currentTime)).toBeGreaterThanOrEqual(6);
+      await expect(page.getByRole('button', { name: 'Прослушать реплику', exact: true })).toBeVisible();
+    } else {
+      await expect(full).toHaveCount(0);
+      await expect(page.getByText('Полная аудиозапись этой беседы не сохранилась.')).toBeVisible();
+    }
+    await page.getByRole('tab', { name: 'Итоги', exact: true }).click();
+    await expect(page.locator('.saved-insight-source blockquote')).toHaveText(quote);
+    if (audioAvailable) {
+      await page.getByRole('button', { name: 'Прослушать момент', exact: true }).click();
+      const clip = page.locator('audio[aria-label="Аудио реплики"]');
+      await expect.poll(() => clip.evaluate((audio: HTMLAudioElement) => audio.duration)).toBe(1);
+      await expect(clip).toHaveAttribute('src', `/api/v1/meetings/${mid}/audio-clips/${cid}`);
+      const handle = await clip.elementHandle();
+      await page.getByRole('button', { name: 'Закрыть источник', exact: true }).click();
+      await expect.poll(() => handle!.evaluate((audio: HTMLAudioElement) => audio.paused)).toBe(true);
+    } else {
+      await expect(page.getByRole('button', { name: 'Прослушать момент', exact: true })).toHaveCount(0);
+      await expect(page.getByText('Аудио этого момента не сохранилось.')).toBeVisible();
+      await page.getByRole('button', { name: 'Открыть фрагмент', exact: true }).click();
+      await expect(page.getByText('Аудио этого фрагмента не сохранено. Доступна только стенограмма.')).toBeVisible();
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expectNoHorizontalOverflow(page);
+  });
+}
+
+test('card editor is wide and saves and clears a Russian Mantine calendar date', async ({ page }, testInfo) => {
+  const mid = '12121212-1212-4212-8212-121212121212';
+  let version = 1;
+  let card = { id: '34343434-3434-4434-8434-343434343434', kind: 'task', title: 'Подготовить смету', description: '', assignee: null, due_date: '2026-09-18' as string | null, due_text: 'К пятнице', priority: 'unspecified', status: 'todo', reviewed: false, quote: null, quote_start: null, agreement: 'unclear', origin: 'manual', start_char: null, end_char: null, evidence: null, revisions: [], clarifications: ['agreement_unconfirmed', 'assignee_missing', 'deadline_missing', 'priority_missing'] };
+  const writes: Array<Record<string, unknown>> = [];
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'preview@example.test', display_name: 'Проверка календаря' } });
+    if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Тест календаря', language: 'ru', status: 'transcribed', source_type: 'text', transcript: 'Обсудим смету.', transcript_length: 13, transcription: null, segments: null, audio_filename: null, audio_bytes: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
+    if (path.endsWith(`/cards/${card.id}`)) {
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      expect(payload.version).toBe(version);
+      writes.push(payload);
+      card = { ...card, ...payload };
+      version++;
+    }
+    if (path.includes('/board')) return route.fulfill({ json: { version, status: 'ready', error_code: null, cards: [card], summary: [], progress: 100 } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto(`/meetings/${mid}?view=kanban`);
+  await page.getByRole('button', { name: 'Подготовить смету', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Карточка встречи', exact: true });
+  await expect(dialog).toBeVisible();
+  expect((await dialog.boundingBox())!.width).toBeGreaterThanOrEqual(1000);
+  const save = dialog.getByRole('button', { name: 'Сохранить карточку', exact: true });
+  await expect(save).toBeInViewport();
+  await expect(dialog.locator('input[type="date"]')).toHaveCount(0);
+  const date = dialog.getByLabel('Дата выполнения', { exact: true });
+  await expect(date).toHaveText('18.09.2026');
+  await page.screenshot({ path: testInfo.outputPath('wide-card-editor.png'), fullPage: true });
+  await date.click();
+  const day = page.getByRole('button', { name: '19 сентября 2026', exact: true });
+  await expect(day).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Следующий месяц', exact: true })).toBeVisible();
+  await expect(page.locator('[data-dates-dropdown]')).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: testInfo.outputPath('mantine-calendar.png'), fullPage: true, animations: 'disabled' });
+  await day.click();
+  await expect(date).toHaveText('19.09.2026');
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes[0]).toMatchObject({ due_date: '2026-09-19', due_text: 'К пятнице' });
+  await page.reload();
+  await page.getByRole('button', { name: 'Подготовить смету', exact: true }).click();
+  await expect(date).toHaveText('19.09.2026');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(save).toBeInViewport();
+  await date.click();
+  const calendar = page.getByRole('dialog', { name: 'Выберите дату выполнения', exact: true });
+  await expect(calendar).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expect(calendar).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: testInfo.outputPath('mantine-calendar-mobile.png'), fullPage: true, animations: 'disabled' });
+  await calendar.getByRole('button', { name: '20 сентября 2026', exact: true }).click();
+  await expect(calendar).toHaveCount(0);
+  await expect(date).toHaveText('20.09.2026');
+  await dialog.getByRole('button', { name: 'Очистить дату', exact: true }).click();
+  await expect(date).toHaveText('Выберите дату');
+  await save.click();
+  await expect(dialog).toHaveCount(0);
+  expect(writes[1]).toMatchObject({ due_date: null, due_text: 'К пятнице' });
+  await page.setViewportSize({ width: 320, height: 740 });
+  await page.getByRole('button', { name: 'Подготовить смету', exact: true }).click();
+  await expectNoHorizontalOverflow(page);
+  await expect(save).toBeInViewport();
+  await page.screenshot({ path: testInfo.outputPath('wide-card-editor-mobile.png'), fullPage: true });
+  expect(errors).toEqual([]);
+});
+
+test('pending message survives navigation and finishes in its original chat', async ({ page }) => {
+  const chatStore = conversationStore();
+  const uid = randomUUID();
+  let release: (() => void) | undefined;
+  let plans = 0;
+  let pendingSaves = 0;
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) {
+      if (path.endsWith('/pending')) pendingSaves++;
+      return chatStore(route);
+    }
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: uid, email: 'qa@example.com', display_name: 'QA' } });
+    if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'max', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
+    if (path === '/api/v1/meetings') return route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } });
+    if (path === '/api/v1/assistant/chat') {
+      plans++;
+      expect(pendingSaves).toBe(1);
+      await new Promise<void>((resolve) => { release = resolve });
+      return route.fulfill({ json: { action: 'reply', answer: 'Ответ готов после перехода.', search_query: '' } });
+    }
+    throw new Error(`Unexpected request ${path}`);
+  });
+  await page.goto('/chat');
+  await page.getByRole('textbox', { name: 'Сообщение ассистенту' }).fill('Вопрос с долгим ответом');
+  await page.getByRole('button', { name: 'Отправить вопрос' }).click();
+  await expect(page.getByRole('status')).toContainText('Готовлю ответ');
+  const mainNav = page.getByRole('navigation', { name: 'Основная навигация' });
+  await mainNav.getByRole('link', { name: 'Встречи', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Встречи', exact: true })).toBeVisible();
+  await mainNav.getByRole('link', { name: 'Чат', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Вопрос с долгим ответом', exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Готовлю ответ');
+  expect(plans).toBe(1);
+  // Another conversation can be used while this one is still processing.
+  await page.getByRole('button', { name: 'Новый чат', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
+  const saved = page.waitForResponse((r) => r.url().endsWith('/turns') && r.request().method() === 'POST');
+  release!();
+  await saved;
+  await expect(page.getByRole('heading', { name: 'Чем могу помочь?' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Список чатов' }).getByRole('button', { name: 'Вопрос с долгим ответом', exact: true }).click();
+  await expect(page.getByText('Ответ готов после перехода.', { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText('Ответ готов после перехода.', { exact: true })).toBeVisible();
+  await expect(page.locator('.workspace-chat-question')).toHaveCount(1);
+  expect(plans).toBe(1);
+});
+
+test('reload resumes a persisted pending message without duplicating it', async ({ page }) => {
+  const chatStore = conversationStore();
+  const uid = randomUUID();
+  let releaseOld: (() => void) | undefined;
+  let plans = 0;
+  const ids: string[] = [];
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) {
+      if (path.endsWith('/pending')) ids.push(route.request().postDataJSON().id);
+      return chatStore(route);
+    }
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: uid, email: 'qa@example.com', display_name: 'QA' } });
+    if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'max', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
+    if (path === '/api/v1/assistant/chat') {
+      plans++;
+      if (plans === 1) await new Promise<void>((resolve) => { releaseOld = resolve });
+      try { await route.fulfill({ json: { action: 'reply', answer: 'Ответ восстановлен.', search_query: '' } }); }
+      catch { /* The original request is cancelled by the page reload. */ }
+      return;
+    }
+    throw new Error(`Unexpected request ${path}`);
+  });
+  await page.goto('/chat');
+  await page.getByRole('textbox', { name: 'Сообщение ассистенту' }).fill('Вопрос перед перезагрузкой');
+  await page.getByRole('button', { name: 'Отправить вопрос' }).click();
+  await expect.poll(() => plans).toBe(1);
+  await page.reload();
+  await expect(page.getByText('Ответ восстановлен.', { exact: true })).toBeVisible();
+  releaseOld!();
+  expect(plans).toBe(2);
+  expect(new Set(ids).size).toBe(1);
+  await expect(page.locator('.workspace-chat-question')).toHaveCount(1);
 });

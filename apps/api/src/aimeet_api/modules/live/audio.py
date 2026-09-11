@@ -202,10 +202,16 @@ async def audio_stream(websocket: WebSocket, room_id: uuid.UUID):
             # rejected by recognition must still exist in the full recording.
             recording.write(data)
             for chunk in speech.feed(data):
-                if not persist_chunk(
-                    factory, settings, room_id, participant_id, stream_token, offset, chunk
-                ):
-                    break
+                try:
+                    if not persist_chunk(
+                        factory, settings, room_id, participant_id, stream_token, offset, chunk
+                    ):
+                        break
+                except HTTPException as exc:
+                    if exc.status_code != 429:
+                        raise
+                    # A slow recognizer must not cut off the full recording.
+                    await websocket.send_json({"type": "error", "code": "TRANSCRIPTION_BACKLOG"})
     except (WebSocketDisconnect, RuntimeError):
         pass
     except OSError:

@@ -191,13 +191,26 @@ services:
   live-analysis-worker:
     <<: *api
     command: [.venv/bin/python, -m, aimeet_api.modules.live.worker, analysis]
-    volumes: [audio-data:/data/audio]
     networks: [data, ai-egress, media]
     extra_hosts: [host.docker.internal:host-gateway]
     depends_on:
       migrate: {condition: service_completed_successfully}
     restart: unless-stopped
     mem_limit: 512m
+    logging: *logging
+
+  live-recording-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.live.worker, recording]
+    networks: [data]
+    volumes: [audio-data:/data/audio]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    cpus: 2
+    pids_limit: 128
     logging: *logging
 
   intelligence-worker:
@@ -224,6 +237,7 @@ services:
       api: {condition: service_healthy}
       live-speech-worker: {condition: service_started}
       live-analysis-worker: {condition: service_started}
+      live-recording-worker: {condition: service_started}
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true

@@ -188,3 +188,30 @@ def test_assistant_task_migration_roundtrip(tmp_path, monkeypatch):
     command.upgrade(cfg, "head")
     assert inspect(engine).has_table("assistant_task_operations")
     engine.dispose()
+
+
+def test_created_tasks_are_saved_to_chat_in_same_transaction(authenticated_client, planner):
+    client = authenticated_client
+    mid = create_meeting(client)
+    cid = str(uuid.uuid4())
+    assert client.post("/api/v1/assistant/conversations", json={"id": cid}).status_code == 200
+    planner.response = TaskCreationPlan(action="create", answer="", tasks=[draft(mid)])
+    body = {**request_body(), "conversation_id": cid}
+    started = client.post(
+        f"/api/v1/assistant/conversations/{cid}/turns/pending",
+        json={
+            "id": body["request_id"],
+            "question": body["question"],
+            "activity": "creating",
+        },
+    )
+    assert started.status_code == 200
+    response = client.post("/api/v1/assistant/tasks", json=body)
+    assert response.status_code == 200, response.text
+    # No client save request is needed, even if its HTTP connection was lost.
+    saved = client.get(f"/api/v1/assistant/conversations/{cid}").json()
+    assert len(saved["turns"]) == 1
+    assert saved["turns"][0]["id"] == body["request_id"]
+    assert saved["turns"][0]["result"]["tasks"] == response.json()["tasks"]
+    assert client.post("/api/v1/assistant/tasks", json=body).status_code == 200
+    assert len(client.get(f"/api/v1/assistant/conversations/{cid}").json()["turns"]) == 1

@@ -1,5 +1,6 @@
 @layer reset, mantine, base, layout, responsive;
 @import '@mantine/core/styles.css' layer(mantine);
+@import '@mantine/dates/styles.css' layer(mantine);
 
 @layer reset {
   *,

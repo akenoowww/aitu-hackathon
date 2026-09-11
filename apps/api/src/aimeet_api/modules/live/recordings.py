@@ -7,7 +7,7 @@ import wave
 from contextlib import ExitStack
 from datetime import UTC, timedelta
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, case, or_, select, update
 
 from aimeet_api.db.models import Meeting, utcnow
 from aimeet_api.modules.live.models import LiveRecordingStream, LiveRoom
@@ -34,7 +34,13 @@ def begin_recording(factory, settings, room_id, participant_id, stream_id, start
                 )
             )
             db.execute(
-                update(LiveRoom).where(LiveRoom.id == room_id).values(recording_status="recording")
+                update(LiveRoom)
+                .where(LiveRoom.id == room_id)
+                .values(
+                    recording_status=case(
+                        (LiveRoom.recording_status == "failed", "failed"), else_="recording"
+                    )
+                )
             )
             db.commit()
     except BaseException:
@@ -103,6 +109,9 @@ def mix_recording(settings, streams, target, *, duration_seconds=0, heartbeat=la
                     raise ValueError("Recording source changed")
                 mixed[left - position : right - position] += np.frombuffer(raw, dtype="<i2")
             wav.writeframesraw(np.clip(mixed, -32768, 32767).astype("<i2").tobytes())
+        wav.close()
+        output.flush()
+        os.fsync(output.fileno())
     digest = hashlib.sha256()
     with target.open("rb") as file:
         for block in iter(lambda: file.read(1024 * 1024), b""):

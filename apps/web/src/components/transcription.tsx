@@ -19,7 +19,7 @@ const errors: Record<string, string> = {
 }
 export function Transcription({ meeting, compact = false }: { meeting: MeetingDetail; compact?: boolean }) {
   const action = useMutation({
-    mutationFn: (kind: 'cancel' | 'retry') => kind === 'cancel' ? api.cancelTranscription(meeting.id) : api.retryTranscription(meeting.id),
+    mutationFn: () => api.retryTranscription(meeting.id),
     onSuccess: async (result) => {
       queryClient.setQueryData(meetingQuery(meeting.id).queryKey, result)
       await queryClient.invalidateQueries({ queryKey: ['meetings', 'list'] })
@@ -28,17 +28,16 @@ export function Transcription({ meeting, compact = false }: { meeting: MeetingDe
   const job = meeting.transcription
   if (!job) return null
   const active = job.status === 'queued' || job.status === 'running'
-  if (compact && job.status === 'succeeded') return null
+  if (compact && (job.status === 'succeeded' || active)) return null
   return <section className="transcription-state" aria-label="Распознавание аудио">
     {!compact && <Text size="sm" className="audio-filename">{meeting.audio_filename}</Text>}
     {active && <>
       {!compact && <Text size="sm" role="status">{job.status === 'queued' ? 'Запись ожидает распознавания. Можно вернуться к ней позже.' : `Распознаём запись · ${job.progress}%`}</Text>}
       {!compact && job.status === 'running' && <Progress size="md" value={job.progress} aria-label="Прогресс распознавания" className="transcription-progress" />}
-      <Button variant="default" color="gray" disabled={action.isPending} onClick={() => action.mutate('cancel')}>Отменить распознавание</Button>
     </>}
     {job.status === 'failed' && <InlineError>{errors[job.error_code ?? ''] ?? 'Не удалось распознать запись. Попробуйте ещё раз.'}</InlineError>}
     {job.status === 'cancelled' && <Text size="sm">Распознавание отменено. Запись сохранена.</Text>}
-    {(job.status === 'failed' || job.status === 'cancelled') && <Button loading={action.isPending} onClick={() => action.mutate('retry')}>Повторить распознавание</Button>}
+    {(job.status === 'failed' || job.status === 'cancelled') && <Button loading={action.isPending} onClick={() => action.mutate()}>Повторить распознавание</Button>}
     {action.isError && <InlineError>{errorMessage(action.error)}</InlineError>}
   </section>
 }

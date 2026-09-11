@@ -60,7 +60,7 @@
 }
 @layer responsive {
   @media (min-width: 761px) {
-    .main-content:has(.workspace-chat) { padding-top: 24px; padding-bottom: 24px; }
+    .main-content:has(.workspace-chat) { padding-top: 24px; padding-bottom: 24px; padding-left: 16px; }
     .workspace-chat { min-height: calc(100svh - 48px); }
   }
   @media (max-width: 1100px) {

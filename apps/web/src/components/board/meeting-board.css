@@ -119,7 +119,6 @@
 .board-toolbar > * { flex-shrink: 0; }
 .board-toolbar .board-grouping { width: 210px; }
 .board-toolbar .board-search { flex: 1 0 160px; min-width: 160px; }
-.board-toolbar .mantine-Button-root { font-weight: 500; }
 .board-filter-fields { display: grid; gap: 14px; }
 .board-filter-popover { max-width: calc(100vw - 24px); }
 .card-drag-handle { margin-left: auto; flex-shrink: 0; cursor: grab; touch-action: none; color: #677c70; }
@@ -136,3 +135,29 @@
 @media (pointer: coarse) { .card-drag-handle { width: 36px; height: 36px; } }
 @media (prefers-reduced-motion: reduce) { .kanban-column { transition: none; } }
 @media print { .card-drag-handle, .kanban-drag-preview, .board-drop-hint { display: none !important; } }
+.card-editor-modal { display: flex; flex-direction: column; max-height: calc(100dvh - 32px); }
+.card-editor-modal-header { padding: 20px 28px; flex-shrink: 0; border-bottom: 1px solid var(--line); }
+.card-editor-modal-header .mantine-Modal-title { font-size: 21px; font-weight: 600; }
+.card-editor-modal-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.card-editor.card-editor-wide { display: flex; flex-direction: column; gap: 0; width: 100%; min-width: 0; min-height: 0; }
+.card-editor-scroll { display: flex; flex-direction: column; flex: 1; gap: 20px; padding: 24px 28px; overflow-y: auto; min-height: 0; }
+.card-editor-scroll > * { flex-shrink: 0; }
+.card-editor-columns { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 32px; align-items: start; }
+.card-editor-section { display: grid; gap: 16px; min-width: 0; }
+.card-editor-columns .editor-grid { gap: 12px; min-width: 0; }
+.card-editor-source { display: flex; justify-content: flex-start; }
+.card-editor-wide .card-clarifications { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; }
+.card-editor-footer { flex-shrink: 0; padding: 16px 28px; border-top: 1px solid var(--line); background: var(--surface); }
+@media (max-width: 700px) {
+  .card-editor-modal-header { padding: 16px; }
+  .card-editor-scroll { padding: 18px 16px; gap: 16px; }
+  .card-editor-columns { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .card-editor-wide .card-clarifications { grid-template-columns: 1fr; }
+  .card-editor-footer { padding: 12px 16px; gap: 8px; flex-wrap: wrap; }
+  .card-editor-footer .mantine-Button-root { flex: 1 1 auto; font-size: 13px; padding-inline: 12px; }
+}
+
+.card-editor-section-label { letter-spacing: .06em; text-transform: uppercase; margin-bottom: -4px; }
+.card-editor-clarifications .mantine-Accordion-control { font-size: 13px; color: var(--mantine-color-gray-7); min-height: 42px; }
+.card-editor-clarifications .mantine-Accordion-label { padding-block: 10px; }
+.card-editor-clarifications .mantine-Accordion-panel { font-size: 13px; color: var(--mantine-color-gray-7); }

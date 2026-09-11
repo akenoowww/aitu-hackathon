@@ -1,13 +1,17 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { DatePickerInput } from '@mantine/dates'
+import { useMediaQuery } from '@mantine/hooks'
+import dayjs from 'dayjs'
+import 'dayjs/locale/ru'
 import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { BoardColumn, DraggableCard } from './board-dnd'
 import { boardCollision, boardKeyboardCoordinates } from './board-dnd-geometry'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Alert, Avatar, Badge, Button, Checkbox, Flex, Menu, Modal, Popover, Progress, SegmentedControl, Select, Text, Textarea, TextInput, Title } from '@mantine/core'
-import { Archive, CalendarDays, Download, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
+import { Accordion, Alert, Avatar, Badge, Button, Checkbox, Flex, Menu, Modal, Popover, Progress, SegmentedControl, Select, Text, Textarea, TextInput, Title } from '@mantine/core'
+import { Archive, CalendarDays, CircleHelp, Download, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { ApiError } from '../../lib/api'
 import { boardApi, boardError, cardInputSchema, emptyCard, agreements, clarificationLabels, kinds, overdue, priorities, statuses, type Board, type Card, type CardInput, type Evidence } from '../../lib/board'
 import type { MeetingDetail } from '../../lib/contracts'
@@ -37,7 +41,9 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
   const [showArchive, setShowArchive] = useState(false)
   const [editing, setEditing] = useState<{ card?: Card; version: number } | null>(null)
   const [dragged, setDragged] = useState<Card | null>(null)
-  const dragStart = useRef<{ version: number; view: string } | null>(null)
+  const dragStart = useRef<{ version: number; view: string; keyboard: boolean } | null>(null)
+  const boardRoot = useRef<HTMLElement>(null)
+  const focusAfterSave = useRef<string | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: boardKeyboardCoordinates }))
   const generation = useMutation({ mutationFn: () => boardApi.generate(meetingId), onSuccess: (data) => cache.setQueryData(key, data) })
   const save = useMutation({
@@ -57,6 +63,14 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
   })
   const download = useMutation({ mutationFn: (format: 'csv' | 'json' | 'ics') => boardApi.download(meetingId, format) })
   const board = query.data
+  useEffect(() => {
+    if (save.isPending || !focusAfterSave.current) return
+    const handle = boardRoot.current?.querySelector<HTMLButtonElement>(`[data-card-id="${focusAfterSave.current}"] .card-drag-handle`)
+    if (handle && !handle.disabled) {
+      handle.focus({ preventScroll: true })
+      focusAfterSave.current = null
+    }
+  }, [save.isPending, board])
   const busy = generation.isPending || ['queued', 'running'].includes(board?.status ?? '')
   const cards = board?.cards ?? []
   const view = selectedView ?? (embedded && !cards.some((card) => card.kind === 'task') ? 'content' : 'tasks')
@@ -82,6 +96,7 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
       ? { status: column as Card['status'] }
       : { kind: column as Card['kind'] }
     if (view === 'tasks' ? card.status === column : card.kind === column) return
+    if (start.keyboard) focusAfterSave.current = card.id
     save.mutate({ card, changes, version: start.version })
   }
   function move(card: Card, status: Card['status']) { if (!save.isPending && card.status !== status) save.mutate({ card, changes: { status } }) }
@@ -99,7 +114,7 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
     setView('content'); setSearch(''); setAssignee(null); setPriority(null); setLateOnly(false)
     setShowArchive(false); setNeedsReview(false); setNeedsClarification(true)
   }
-  return <section className={`meeting-board transcript-panel ${embedded ? 'embedded-board' : ''}`} aria-labelledby="meeting-board-title">
+  return <section ref={boardRoot} className={`meeting-board transcript-panel ${embedded ? 'embedded-board' : ''}`} aria-labelledby="meeting-board-title">
     <header className={embedded ? 'board-heading-hidden' : 'board-heading'}>
       <Title order={2} id="meeting-board-title" size="h2">{embedded ? 'Канбан встречи' : 'Итоги встречи'}</Title>
     </header>
@@ -164,7 +179,7 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
       </div> : <>
         {!showArchive && <Text size="xs" c="dimmed" className="no-print">{view === 'tasks' ? 'Перенос за ручку меняет статус поручения.' : 'Перенос за ручку меняет тип карточки.'}</Text>}
         <DndContext id={`board-dnd-${meetingId}`} sensors={sensors} collisionDetection={boardCollision}
-          onDragStart={({ active }) => { const card = cards.find((c) => c.id === active.id); if (card && board) { setView(view); setColumnOrder(contentKinds); setDragged(card); dragStart.current = { view, version: board.version }; save.reset() } }}
+          onDragStart={({ active, activatorEvent }) => { const card = cards.find((c) => c.id === active.id); if (card && board) { setView(view); setColumnOrder(contentKinds); setDragged(card); dragStart.current = { view, version: board.version, keyboard: activatorEvent.type === 'keydown' }; save.reset() } }}
           onDragCancel={() => { setDragged(null); dragStart.current = null }} onDragEnd={drop}
           accessibility={{ screenReaderInstructions: { draggable: 'Нажмите пробел, чтобы поднять карточку. Стрелками выберите колонку. Пробел — переместить, Escape — отменить.' }, announcements: {
             onDragStart: ({ active }) => `Выбрана карточка «${active.data.current?.title}». Стрелками выберите колонку.`,
@@ -238,26 +253,56 @@ function CardEditor({ meetingId, initial, version, onClose, onSaved, onRefresh, 
   onRefresh: () => Promise<unknown>
   onEvidence: (evidence: Evidence) => void
 }) {
+  const fieldAppearance = { size: 'sm', variant: 'filled', radius: 'md' } as const
+  const mobile = useMediaQuery('(max-width: 700px)')
   const form = useForm<CardInput>({ resolver: zodResolver(cardInputSchema), defaultValues: initial ? cardInputSchema.parse(initial) : emptyCard })
   const mutation = useMutation({ mutationFn: (values: CardInput) => boardApi.save(meetingId, version, values, initial?.id), onSuccess: onSaved })
   const conflict = mutation.error instanceof ApiError && mutation.error.kind === 'BOARD_CONFLICT'
-  const select = (name: 'kind' | 'priority' | 'status' | 'agreement', label: string, values: Record<string, string>) => <Controller name={name} control={form.control} render={({ field }) => <Select label={label} data={options(values)} value={field.value} onChange={field.onChange} onBlur={field.onBlur} error={form.formState.errors[name]?.message} />} />
-  return <Modal opened onClose={() => { if (!mutation.isPending) onClose() }} title={initial ? 'Карточка встречи' : 'Новая карточка'} size="lg" centered closeOnClickOutside={false} closeOnEscape={!mutation.isPending} withCloseButton={!mutation.isPending} closeButtonProps={{ 'aria-label': 'Закрыть карточку' }}>
-    <form className="card-editor" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
-      {!!initial?.clarifications.length && <Alert color="orange" className="card-clarifications-alert" title="Что нужно уточнить"><ul className="card-clarifications">{initial.clarifications.map((code) => <li key={code}>{clarificationLabels[code] ?? 'Проверьте карточку'}</li>)}</ul></Alert>}
-      {initial?.evidence && <EvidenceButton evidence={initial.evidence} onOpen={onEvidence} />}
-      <TextInput label="Суть карточки" required maxLength={500} data-autofocus {...form.register('title')} error={form.formState.errors.title?.message} />
-      <Textarea label="Детали" rows={3} maxLength={4000} {...form.register('description')} />
-      <div className="editor-grid">{select('kind', 'Тип карточки', kinds)}{select('priority', 'Приоритет', priorities)}</div>
-      <Controller name="assignee" control={form.control} render={({ field }) => <TextInput label="Ответственный" placeholder="Не указан" maxLength={200} value={field.value ?? ''} onChange={(e) => field.onChange(e.currentTarget.value || null)} />} />
-      <div className="editor-grid"><Controller name="due_date" control={form.control} render={({ field }) => <TextInput label="Дата выполнения" type="date" value={field.value ?? ''} onChange={(e) => field.onChange(e.currentTarget.value || null)} error={form.formState.errors.due_date?.message} />} />
-        <Controller name="due_text" control={form.control} render={({ field }) => <TextInput label="Срок как озвучен" placeholder="Например: к пятнице" maxLength={200} value={field.value ?? ''} onChange={(e) => field.onChange(e.currentTarget.value || null)} />} /></div>
-      <div className="editor-grid">{select('status', 'Статус', statuses)}{select('agreement', 'Договорённость', agreements)}</div>
-      <Controller name="quote" control={form.control} render={({ field }) => <Textarea label="Цитата из стенограммы" description="Необязательно для ручной карточки. Скопируйте исходный фрагмент без изменений." rows={3} maxLength={2000} value={field.value ?? ''} onChange={(e) => { field.onChange(e.currentTarget.value || null); form.setValue('quote_start', null) }} />} />
-      <Controller name="reviewed" control={form.control} render={({ field }) => <Checkbox label="Я проверил содержание, ответственного и срок" checked={field.value} onChange={(e) => field.onChange(e.currentTarget.checked)} />} />
-      {!!initial?.revisions.length && <Disclosure label="Изменения в разговоре"><CardRevisions card={initial} onOpen={onEvidence} /></Disclosure>}
-      {mutation.isError && <Alert color="red" role="alert">{boardError(mutation.error)}{conflict && <Button variant="subtle" onClick={() => { void onRefresh(); onClose() }}>Закрыть и обновить доску</Button>}</Alert>}
-      <Flex justify="flex-end" gap="sm"><Button variant="default" disabled={mutation.isPending} onClick={onClose}>Отмена</Button><Button type="submit" loading={mutation.isPending} disabled={conflict}>Сохранить карточку</Button></Flex>
+  const select = (name: 'kind' | 'priority' | 'status' | 'agreement', label: string, values: Record<string, string>) => <Controller name={name} control={form.control} render={({ field }) => <Select {...fieldAppearance} label={label} data={options(values)} value={field.value} onChange={field.onChange} onBlur={field.onBlur} error={form.formState.errors[name]?.message} />} />
+  return <Modal opened onClose={() => { if (!mutation.isPending) onClose() }} title={initial ? 'Карточка встречи' : 'Новая карточка'}
+    size={1040} xOffset={16} yOffset={16} padding={0} centered
+    classNames={{ content: 'card-editor-modal', header: 'card-editor-modal-header', body: 'card-editor-modal-body' }}
+    closeOnClickOutside={false} closeOnEscape={!mutation.isPending} withCloseButton={!mutation.isPending} closeButtonProps={{ 'aria-label': 'Закрыть карточку' }}>
+    <form className="card-editor card-editor-wide" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+      <div className="card-editor-scroll">
+        {!!initial?.clarifications.length && <Accordion variant="contained" radius="md" className="card-editor-clarifications">
+          <Accordion.Item value="clarifications"><Accordion.Control icon={<CircleHelp size={17} aria-hidden="true" />}>Нужно уточнить · {initial.clarifications.length}</Accordion.Control>
+            <Accordion.Panel><ul className="card-clarifications">{initial.clarifications.map((code) => <li key={code}>{clarificationLabels[code] ?? 'Проверьте карточку'}</li>)}</ul></Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>}
+        {initial?.evidence && <div className="card-editor-source"><EvidenceButton evidence={initial.evidence} onOpen={onEvidence} /></div>}
+        <TextInput {...fieldAppearance} label="Суть карточки" required maxLength={500} data-autofocus {...form.register('title')} error={form.formState.errors.title?.message} />
+        <div className="card-editor-columns">
+          <div className="card-editor-section">
+            <Text className="card-editor-section-label" size="xs" fw={600} c="dimmed">Содержание</Text>
+            <Textarea {...fieldAppearance} label="Детали" placeholder="Контекст и подробности поручения" autosize minRows={4} maxRows={8} resize="none" maxLength={4000} {...form.register('description')} />
+            <Controller name="quote" control={form.control} render={({ field }) => <Textarea {...fieldAppearance} label="Цитата из стенограммы" placeholder="Вставьте точный фрагмент разговора" description="Необязательно. Точный фрагмент стенограммы без изменений." inputWrapperOrder={['label', 'input', 'description', 'error']} autosize minRows={4} maxRows={8} resize="none" maxLength={2000} value={field.value ?? ''} onChange={(e) => { field.onChange(e.currentTarget.value || null); form.setValue('quote_start', null) }} />} />
+            {!!initial?.revisions.length && <Disclosure label="Изменения в разговоре"><CardRevisions card={initial} onOpen={onEvidence} /></Disclosure>}
+          </div>
+          <div className="card-editor-section">
+            <Text className="card-editor-section-label" size="xs" fw={600} c="dimmed">Параметры</Text>
+            <div className="editor-grid">{select('kind', 'Тип карточки', kinds)}{select('priority', 'Приоритет', priorities)}</div>
+            <Controller name="assignee" control={form.control} render={({ field }) => <TextInput {...fieldAppearance} label="Ответственный" placeholder="Не указан" maxLength={200} value={field.value ?? ''} onChange={(e) => field.onChange(e.currentTarget.value || null)} />} />
+            <div className="editor-grid">
+              <Controller name="due_date" control={form.control} render={({ field }) => <DatePickerInput {...fieldAppearance}
+                label="Дата выполнения" placeholder="Выберите дату" locale="ru" firstDayOfWeek={1}
+                valueFormat="DD.MM.YYYY" clearable clearButtonProps={{ 'aria-label': 'Очистить дату' }}
+                leftSection={<CalendarDays size={18} aria-hidden="true" />} leftSectionPointerEvents="none"
+                dropdownType={mobile ? 'modal' : 'popover'} popoverProps={{ withinPortal: false, position: 'bottom-start' }}
+                modalProps={{ title: 'Выберите дату выполнения', centered: true, size: 'auto', closeButtonProps: { 'aria-label': 'Закрыть календарь' } }}
+                ariaLabels={{ monthLevelControl: 'Выбрать месяц', yearLevelControl: 'Выбрать год', nextMonth: 'Следующий месяц', previousMonth: 'Предыдущий месяц', nextYear: 'Следующий год', previousYear: 'Предыдущий год', nextDecade: 'Следующее десятилетие', previousDecade: 'Предыдущее десятилетие' }}
+                getDayAriaLabel={(date) => dayjs(date).locale('ru').format('D MMMM YYYY')}
+                value={field.value} onChange={field.onChange} onBlur={field.onBlur} ref={field.ref} name={field.name}
+                error={form.formState.errors.due_date?.message} />} />
+              <Controller name="due_text" control={form.control} render={({ field }) => <TextInput {...fieldAppearance} label="Срок как озвучен" placeholder="Например: к пятнице" maxLength={200} value={field.value ?? ''} onChange={(e) => field.onChange(e.currentTarget.value || null)} />} />
+            </div>
+            <div className="editor-grid">{select('status', 'Статус', statuses)}{select('agreement', 'Договорённость', agreements)}</div>
+          </div>
+        </div>
+        <Controller name="reviewed" control={form.control} render={({ field }) => <Checkbox size="sm" label="Я проверил содержание, ответственного и срок" checked={field.value} onChange={(e) => field.onChange(e.currentTarget.checked)} />} />
+        {mutation.isError && <Alert color="red" role="alert">{boardError(mutation.error)}{conflict && <Button variant="subtle" onClick={() => { void onRefresh(); onClose() }}>Закрыть и обновить доску</Button>}</Alert>}
+      </div>
+      <Flex className="card-editor-footer" justify="flex-end" gap="sm"><Button size="sm" variant="default" disabled={mutation.isPending} onClick={onClose}>Отмена</Button><Button size="sm" type="submit" loading={mutation.isPending} disabled={conflict}>Сохранить карточку</Button></Flex>
     </form>
   </Modal>
 }

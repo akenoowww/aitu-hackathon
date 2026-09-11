@@ -285,6 +285,11 @@ def finalize_rooms(factory, settings):
                 db.flush()
                 room.meeting_id = meeting.id
             room.status = "ended"
+            if not transcript:
+                # A recorded call without recognized speech has no analysis work;
+                # it must not remain in "preparing outcomes" forever.
+                room.analysis_status, room.analysis_error = "ready", None
+                room.analysis_through = room.transcript_revision
             if streams and room.recording_status != "failed":
                 room.recording_status = "queued"
             sync_archived_board(db, room)
@@ -293,7 +298,7 @@ def finalize_rooms(factory, settings):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["speech", "analysis"])
+    parser.add_argument("mode", choices=["speech", "analysis", "recording"])
     mode = parser.parse_args().mode
     settings = Settings()
     engine, factory = create_engine_and_session(settings)
@@ -329,11 +334,13 @@ def main():
                     process_audio(factory, settings, chunk, model)
                 else:
                     time.sleep(0.3)
+            elif mode == "recording":
+                if not process_recording_once(factory, settings):
+                    time.sleep(1)
             else:
                 # This process has media-service access; the speech worker stays on the
                 # internal data network so audio cannot leave through an external API.
                 finalize_rooms(factory, settings)
-                process_recording_once(factory, settings)
                 claim = claim_analysis(factory, settings)
                 if claim:
                     process_analysis(factory, settings, claim)

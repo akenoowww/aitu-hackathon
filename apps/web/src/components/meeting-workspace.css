@@ -1,6 +1,7 @@
 .saved-meeting-shell { width: 100%; max-width: 1800px; min-width: 0; margin: 0 auto; }
 .saved-meeting-shell > .page-back { margin: 0 0 22px; }
 .saved-meeting-header { margin-bottom: 8px; }
+.saved-meeting-actions { justify-content: flex-end; max-width: 100%; }
 .saved-meeting-header .live-status { flex-wrap: wrap; font-size: 13px; }
 .meeting-workspace { width: 100%; min-width: 0; }
 .saved-meeting-tabs .mantine-Tabs-list { margin-bottom: 22px; flex-wrap: nowrap; }
@@ -22,7 +23,7 @@
 @media (max-width: 760px) {
   .saved-insight-note { grid-template-columns: 36px minmax(0, 1fr); }
   .saved-meeting-header { grid-template-columns: minmax(0, 1fr); }
-  .saved-meeting-header > .mantine-Button-root { justify-self: start; }
+  .saved-meeting-actions { justify-self: start; justify-content: flex-start; }
   .saved-meeting-tabs .mantine-Tabs-list { gap: 6px; }
   .saved-meeting-tabs .mantine-Tabs-tab { padding: 12px 10px; font-size: 15px; }
   .saved-meeting-pane { max-height: calc(100dvh - 275px); min-height: 260px; padding-left: 0; padding-right: 0; }
