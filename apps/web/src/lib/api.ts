@@ -45,8 +45,8 @@ export const api = {
   ),
   meeting: (id: string, signal?: AbortSignal) => request(`/meetings/${encodeURIComponent(id)}`, meetingDetailSchema, { signal }),
   createMeeting: (values: MeetingCreate) => request('/meetings', meetingDetailSchema, { method: 'POST', body: JSON.stringify(values) }),
-  uploadAudio: (values: { title: string; language: string; file: File }) => request(
-    `/meetings/audio?${new URLSearchParams({ title: values.title, language: values.language, filename: values.file.name })}`,
+  uploadAudio: (values: { title: string; language: string; file: File; numSpeakers?: number }) => request(
+    `/meetings/audio?${new URLSearchParams({ title: values.title, language: values.language, filename: values.file.name, ...(values.numSpeakers === undefined ? {} : { num_speakers: String(values.numSpeakers) }) })}`,
     meetingDetailSchema, { method: 'POST', body: values.file, headers: { 'Content-Type': 'application/octet-stream' } },
   ),
   cancelTranscription: (id: string) => request(`/meetings/${encodeURIComponent(id)}/transcription/cancel`, meetingDetailSchema, { method: 'POST' }),

@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 
+from aimeet_api.modules.transcription.diarization import SpeakerAligner, diarize
+
 # Set before importing libraries; missing assets must fail, never trigger a download.
 os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -72,9 +74,16 @@ def transcribe(path: Path, config: dict, emit) -> dict:
         raise TranscriptionError("model_changed")
     audio = decode_audio(path, config["extension"], config["max_audio_seconds"])
     emit({"progress": 2})
+    duration = len(audio) / 16000
+    emit({"duration_seconds": round(duration, 3)})
+    # Disable telemetry before loading either inference adapter.
     import onnxruntime
 
     onnxruntime.disable_telemetry_events()
+    use_speakers = config.get("diarization_enabled", False)
+    aligner = SpeakerAligner(diarize(audio, config, emit)) if use_speakers else None
+    progress_start = 25 if use_speakers else 2
+    emit({"progress": progress_start})
     from faster_whisper import WhisperModel
 
     model = WhisperModel(
@@ -84,32 +93,42 @@ def transcribe(path: Path, config: dict, emit) -> dict:
         cpu_threads=config["cpu_threads"],
         local_files_only=True,
     )
-    duration = len(audio) / 16000
-    emit({"duration_seconds": round(duration, 3)})
     segments, info = model.transcribe(
         audio,
         language=None if config["language"] == "auto" else config["language"],
         task="transcribe",
+        multilingual=True,
         beam_size=5,
         vad_filter=True,
         condition_on_previous_text=False,
-        word_timestamps=False,
+        word_timestamps=use_speakers,
     )
     output = []
     emit({"detected_language": info.language})
     total_chars = 0
-    last_progress = 2
+    last_progress = progress_start
     for segment in segments:
-        text = segment.text.strip()
-        if text:
-            total_chars += len(text) + 1
+        start = max(0.0, min(float(segment.start), duration))
+        end = max(start, min(float(segment.end), duration))
+        rows = (
+            aligner.split(segment, duration)
+            if aligner
+            else [{"start": round(start, 3), "end": round(end, 3), "text": segment.text.strip()}]
+        )
+        for row in rows:
+            if not row["text"]:
+                continue
+            total_chars += len(row["text"]) + 1
             if total_chars > 200_000 or len(output) >= 20_000:
                 raise TranscriptionError("transcript_too_long")
-            start = max(0.0, min(float(segment.start), duration))
-            end = max(start, min(float(segment.end), duration))
-            output.append({"start": round(start, 3), "end": round(end, 3), "text": text})
+            output.append(row)
             emit({"segment": output[-1]})
-        progress = min(99, max(2, int(segment.end / duration * 100)))
+        progress = min(
+            99,
+            max(
+                progress_start, progress_start + int(segment.end / duration * (99 - progress_start))
+            ),
+        )
         if progress > last_progress:
             emit({"progress": progress})
             last_progress = progress

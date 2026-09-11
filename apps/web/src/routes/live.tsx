@@ -19,7 +19,7 @@ export function LivePage() {
   function startConversation() {
     if (create.isPending) return
     const date = new Intl.DateTimeFormat('ru', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }).format(new Date())
-    create.mutate({ title: `Разговор · ${date}`, language: 'ru' })
+    create.mutate({ title: `Разговор · ${date}`, language: 'auto' })
   }
   if (entering && !rooms.isError) return <LiveConnecting title="Готовим пространство" description="Для вашего следующего разговора" />
   if (create.isPending) return <LiveConnecting title="Создаём комнату" description="Скоро можно будет пригласить участников" roomTitle={create.variables?.title} />

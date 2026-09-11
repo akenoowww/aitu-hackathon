@@ -21,6 +21,8 @@ dependencies = [
   "faster-whisper==1.2.1",
   "PyJWT>=2.10,<3",
   "webrtcvad-wheels>=2.0.14,<3",
+  "sherpa-onnx==1.13.8",
+  "onnxruntime>=1.28,<2",
 ]
 
 [dependency-groups]

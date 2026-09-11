@@ -128,7 +128,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
           {retryRecording.isError && <InlineError>Не удалось повторить сохранение. Обновите страницу и попробуйте ещё раз.</InlineError>}
           <section aria-label="Стенограмма разговора" data-testid="meeting-conversation">
             {segments.length ? segments.map((segment, index) => <article data-transcript-segment data-start={segment.start} data-end={segment.end} data-start-char={ranges[index]?.start} data-end-char={ranges[index]?.end} tabIndex={-1} key={`${index}-${segment.start}`} className="live-utterance saved-utterance">
-              <Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text><Text className="live-utterance-text"><SourceHighlight text={segment.text} offset={ranges[index]?.start} selection={focusedSource} /></Text>
+              <TranscriptLine segment={segment} offset={ranges[index]?.start} selection={focusedSource} />
               {ranges[index] && (canPlayFull || (recording.data?.clips ?? []).some((clip) => clip.available && clip.start_char < ranges[index].end && clip.end_char > ranges[index].start)) && <Button variant="subtle" size="compact-sm" mt="xs" onClick={() => openSource({ quote: segment.text, start_char: ranges[index].start, end_char: ranges[index].end, start_seconds: segment.start, end_seconds: segment.end, speaker: null }, true)}>Прослушать реплику</Button>}
             </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}><SourceHighlight text={meeting.transcript} offset={0} selection={focusedSource} /></div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>Здесь появится разговор</Title><Text c="dimmed">{processing ? 'Первые реплики появятся по мере распознавания записи.' : 'Распознайте запись, чтобы прочитать стенограмму.'}</Text></div>}
             {processing && segments.length > 0 && <Text className="audio-feed-continuation" size="sm" c="dimmed">Продолжаем распознавать…</Text>}
@@ -164,6 +164,11 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
     </Tabs>
     {openedSource && <MeetingEvidence key={`${openedSource.start_char}:${openedSource.end_char}`} meeting={meeting} evidence={openedSource} autoplay={playOnOpen} onClose={() => setOpenedSource(null)} />}
   </section>
+}
+
+function TranscriptLine({ segment, offset, selection }: { segment: NonNullable<MeetingDetail['segments']>[number]; offset?: number; selection: Evidence | null }) {
+  const prefix = segment.speaker && segment.text.startsWith(`${segment.speaker}: `) ? `${segment.speaker}: ` : ''
+  return <><Group gap="sm">{segment.speaker && <Text fw={600}>{segment.speaker}</Text>}<Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text></Group><Text className="live-utterance-text"><SourceHighlight text={segment.text.slice(prefix.length)} offset={offset === undefined ? undefined : offset + Array.from(prefix).length} selection={selection} /></Text></>
 }
 
 function SourceHighlight({ text, offset, selection }: { text: string; offset?: number; selection: Evidence | null }) {

@@ -30,12 +30,16 @@ def run_job(factory, settings, claim, stop=lambda: False):
         try:
             config = {
                 "engine": "faster-whisper",
-                "pipeline_version": 1,
+                "pipeline_version": 2,
                 "model_path": str(settings.stt_model_path.resolve()),
                 "model": model_metadata(settings.stt_model_path),
                 "device": settings.stt_device,
                 "compute_type": settings.stt_compute_type,
                 "cpu_threads": settings.stt_cpu_threads,
+                "diarization_enabled": settings.stt_diarization_enabled,
+                "diarization_model_path": str(settings.stt_diarization_model_path.resolve()),
+                "diarization_threshold": settings.stt_diarization_threshold,
+                "num_speakers": (meeting.transcription.config or {}).get("num_speakers"),
                 "language": meeting.language,
                 "extension": Path(meeting.audio_filename).suffix.lower(),
                 "max_audio_seconds": settings.max_audio_seconds,

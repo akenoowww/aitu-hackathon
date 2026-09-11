@@ -169,12 +169,13 @@ def test_stream_fencing_and_local_pcm_storage(app, authenticated_client):
     class Model:
         def transcribe(self, audio, **kwargs):
             assert kwargs["task"] == "transcribe" and kwargs["language"] == "ru"
-            return iter([SimpleNamespace(text="Готовим пилот.")]), None
+            assert kwargs["multilingual"] is True
+            return iter([SimpleNamespace(text="Бүгін обсуждаем release plan.")]), None
 
     process_audio(app.state.session_factory, app.state.settings, claim, Model())
     state = authenticated_client.get(f"/api/v1/live/rooms/{room_id}", headers=auth(host)).json()
     assert state["utterances"][0]["participant_id"] == host["participant_id"]
-    assert state["utterances"][0]["text"] == "Готовим пилот."
+    assert state["utterances"][0]["text"] == "Бүгін обсуждаем release plan."
     assert chunk_path(app.state.settings, claim.id).read_bytes() == b"\x00\x00" * 16000
 
 

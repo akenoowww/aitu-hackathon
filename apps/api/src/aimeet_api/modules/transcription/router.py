@@ -38,6 +38,7 @@ async def upload_audio(
     title: Annotated[str, Query(min_length=1, max_length=200)],
     filename: Annotated[str, Query(min_length=1, max_length=255)],
     language: Literal["auto", "ru", "kk", "en"] = "auto",
+    num_speakers: Annotated[int | None, Query(ge=1, le=32)] = None,
 ):
     if not title.strip():
         raise HTTPException(422, "Title must not be blank")
@@ -58,7 +59,7 @@ async def upload_audio(
         audio_filename=filename,
         audio_bytes=size,
         audio_sha256=digest,
-        transcription=TranscriptionJob(),
+        transcription=TranscriptionJob(config={"num_speakers": num_speakers}),
     )
     try:
         db.add(meeting)
@@ -122,7 +123,8 @@ def cancel(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep):
     operation_id="retryTranscription",
 )
 def retry(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep, settings: SettingsDep):
-    owned_audio(db, user, meeting_id)
+    meeting = owned_audio(db, user, meeting_id)
+    requested_speakers = (meeting.transcription.config or {}).get("num_speakers")
     if not audio_path(settings, meeting_id).is_file():
         raise HTTPException(409, "Audio source is missing; upload it again")
     result = db.execute(
@@ -139,7 +141,7 @@ def retry(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep, settings: S
             error_code=None,
             lease_token=None,
             lease_until=None,
-            config=None,
+            config={"num_speakers": requested_speakers},
             detected_language=None,
             duration_seconds=None,
         )

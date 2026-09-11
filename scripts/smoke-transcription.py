@@ -12,6 +12,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("files", type=Path, nargs="+")
     parser.add_argument("--model-path", type=Path, required=True)
+    parser.add_argument("--diarization-model-path", type=Path, default=Path("models/speaker-diarization"))
+    parser.add_argument("--min-speakers", type=int, default=0)
+    parser.add_argument("--num-speakers", type=int)
     parser.add_argument(
         "--language", choices=["auto", "ru", "kk", "en"], default="auto"
     )
@@ -32,6 +35,7 @@ def main():
             audio_dir=Path(temporary) / "audio",
             app_env="development",
             stt_model_path=args.model_path.resolve(),
+            stt_diarization_model_path=args.diarization_model_path.resolve(),
             allowed_origins="http://testserver",
             cookie_secure=False,
         )
@@ -67,6 +71,7 @@ def main():
                             "title": "Local ASR verification",
                             "language": args.language,
                             "filename": source.name,
+                            **({"num_speakers": args.num_speakers} if args.num_speakers else {}),
                         },
                         content=iter(lambda: stream.read(64 * 1024), b""),
                         headers={"Content-Type": "application/octet-stream"},
@@ -81,6 +86,10 @@ def main():
                     "transcription"
                 ]
                 assert result["transcript"].strip()
+                speakers = {row["speaker"] for row in result["segments"] if row.get("speaker")}
+                assert len(speakers) >= args.min_speakers, speakers
+                if args.num_speakers:
+                    assert len(speakers) <= args.num_speakers, speakers
                 for phrase in args.expect:
                     assert phrase.lower() in result["transcript"].lower(), (
                         f"Missing: {phrase}"
@@ -102,6 +111,7 @@ def main():
                             "format": source.suffix,
                             "status": "passed",
                             "transcript_chars": len(result["transcript"]),
+                            "speakers": len(speakers),
                             "audio_seconds": result["transcription"][
                                 "duration_seconds"
                             ],

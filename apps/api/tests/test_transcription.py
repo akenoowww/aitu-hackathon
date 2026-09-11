@@ -49,7 +49,7 @@ def completed():
     return {
         "transcript": "Согласовали план.",
         "segments": [
-            {"start": 0.0, "end": 1.0, "text": "Согласовали план."},
+            {"start": 0.0, "end": 1.0, "text": "Согласовали план.", "speaker": None},
         ],
         "detected_language": "ru",
         "duration_seconds": 1.0,
@@ -102,6 +102,25 @@ def test_chunked_upload_limit_cleans_partial_file(app, authenticated_client):
     )
     assert response.status_code == 413
     assert not list(app.state.settings.audio_dir.glob("*"))
+
+
+def test_speaker_count_hint_is_validated_and_survives_retry(app, authenticated_client):
+    for count in (0, -1, 33):
+        assert upload(authenticated_client, num_speakers=count).status_code == 422
+    body = upload(authenticated_client, num_speakers=2).json()
+    with app.state.session_factory() as db:
+        job = db.scalar(
+            select(TranscriptionJob).where(TranscriptionJob.meeting_id == UUID(body["id"]))
+        )
+        assert job.config["num_speakers"] == 2
+    base = f"/api/v1/meetings/{body['id']}/transcription"
+    authenticated_client.post(base + "/cancel")
+    assert authenticated_client.post(base + "/retry").status_code == 200
+    with app.state.session_factory() as db:
+        job = db.scalar(
+            select(TranscriptionJob).where(TranscriptionJob.meeting_id == UUID(body["id"]))
+        )
+        assert job.config["num_speakers"] == 2
 
 
 def test_claim_completion_is_atomic_and_single_use(app, authenticated_client):

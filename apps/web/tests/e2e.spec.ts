@@ -322,6 +322,65 @@ test('workspace chat searches existing meetings without manual preparation', asy
   await expectNoHorizontalOverflow(page);
 });
 
+test('speaker count hint reaches the audio upload API', async ({ page }) => {
+  let count: string | null = null;
+  await page.route('**/api/v1/**', async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/v1/auth/me') return route.fulfill({ json: { id: '11111111-1111-4111-8111-111111111111', email: 'preview@example.com', display_name: 'Проверка' } });
+    if (url.pathname === '/api/v1/meetings') return route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } });
+    if (url.pathname === '/api/v1/meetings/audio') {
+      count = url.searchParams.get('num_speakers');
+      return route.fulfill({ status: 503, json: {} });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto('/meetings');
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Загрузить аудио', exact: true }).first().click();
+  await (await chooser).setFiles({ name: 'Разговор.wav', mimeType: 'audio/wav', buffer: Buffer.from('UI fixture') });
+  await page.getByRole('combobox', { name: 'Сколько участников в записи', exact: true }).click();
+  await page.getByRole('option', { name: '2', exact: true }).click();
+  await page.getByRole('button', { name: 'Распознать запись', exact: true }).click();
+  await expect.poll(() => count).toBe('2');
+});
+
+test('diarized conversation preserves speakers and mixed language on mobile', async ({ page }, testInfo) => {
+  const id = '22222222-2222-4222-8222-222222222222';
+  const segments = [
+    { start: 0, end: 4, speaker: 'Участник 1', text: 'Участник 1: Бүгін обсуждаем release plan.' },
+    { start: 5, end: 8, speaker: 'Участник 2', text: 'Участник 2: Жақсы, я подготовлю draft.' },
+    { start: 9, end: 12, speaker: 'Участник 1', text: 'Участник 1: Спасибо, келістік.' },
+  ];
+  const transcript = segments.map((segment) => segment.text).join('\n');
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id, email: 'preview@example.com', display_name: 'Проверка' } });
+    if (path === `/api/v1/meetings/${id}`) return route.fulfill({ json: {
+      id, title: 'Смешанный разговор', language: 'auto', source_type: 'audio', status: 'transcribed',
+      created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z',
+      audio_filename: 'Разговор.wav', audio_bytes: 100, transcript, transcript_length: transcript.length,
+      segments, transcription: { status: 'succeeded', progress: 100, error_code: null, detected_language: 'ru', duration_seconds: 12 },
+    } });
+    if (path.endsWith('/board')) return route.fulfill({ json: { version: 0, status: 'idle', progress: 0, error_code: null, cards: [], summary: [] } });
+    if (path.endsWith('/audio-clips')) return route.fulfill({ json: { source: 'none', clips: [], full_audio_available: false, recording_status: 'none' } });
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto(`/meetings/${id}`);
+  const conversation = page.getByTestId('meeting-conversation');
+  const rows = conversation.locator('[data-transcript-segment]');
+  await expect(rows).toHaveCount(3);
+  await expect(conversation.getByText('Участник 1', { exact: true })).toHaveCount(2);
+  await expect(conversation.getByText('Участник 2', { exact: true })).toHaveCount(1);
+  await expect(rows.nth(0).locator('.live-utterance-text')).toHaveText('Бүгін обсуждаем release plan.');
+  await expect(rows.nth(1).locator('.live-utterance-text')).toHaveText('Жақсы, я подготовлю draft.');
+  await expect(rows.nth(2)).toContainText('00:09');
+  await page.screenshot({ path: testInfo.outputPath('speakers-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(rows.nth(2)).toContainText('Участник 1');
+  await page.screenshot({ path: testInfo.outputPath('speakers-mobile.png'), fullPage: true });
+});
+
 test('audio upload shows progressive results and keeps the sidebar on the left', async ({ page }, testInfo) => {
   const id = '22222222-2222-4222-8222-222222222222';
   let stage = 0;
@@ -431,7 +490,7 @@ test('live connection keeps the sidebar and places microphone with meeting actio
   await page.screenshot({ path: testInfo.outputPath('live-compact-mobile.png'), fullPage: true, animations: 'disabled' });
 });
 
-test('new conversation starts with an automatic title and Russian language', async ({ page }, testInfo) => {
+test('new conversation starts with an automatic title and automatic language detection', async ({ page }, testInfo) => {
   let payload: { title: string; language: string } | undefined;
   await page.route('**/api/v1/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
@@ -448,7 +507,7 @@ test('new conversation starts with an automatic title and Russian language', asy
   await expect(page.getByRole('combobox')).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('live-entry-compact.png'), fullPage: true, animations: 'disabled' });
   await page.getByRole('button', { name: 'Новый разговор', exact: true }).click();
-  await expect.poll(() => payload?.language).toBe('ru');
+  await expect.poll(() => payload?.language).toBe('auto');
   expect(payload?.title).toMatch(/^Разговор · /);
   await expect(page.getByRole('alert')).toContainText('Голосовая связь пока недоступна');
   await page.setViewportSize({ width: 320, height: 740 });

@@ -1768,6 +1768,8 @@ export interface components {
             end: number;
             /** Text */
             text: string;
+            /** Speaker */
+            speaker?: string | null;
         };
         /** TranscriptionOutput */
         TranscriptionOutput: {
@@ -3766,6 +3768,7 @@ export interface operations {
                 title: string;
                 filename: string;
                 language?: "auto" | "ru" | "kk" | "en";
+                num_speakers?: number | null;
             };
             header?: {
                 "x-requested-with"?: string | null;
