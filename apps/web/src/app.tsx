@@ -1,15 +1,10 @@
-import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Link, Navigate, Outlet } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Navigate, Outlet } from '@tanstack/react-router'
 import { WorkspaceShell } from './components/shell'
-import { ErrorState } from './components/ui'
 import { meetingSearchSchema, meetingViewSearchSchema } from './lib/contracts'
 import { liveSearch } from './lib/live'
-import { Button } from '@mantine/core'
+import { RouteError, NotFound } from './components/route-errors'
 
-const rootRoute = createRootRoute({
-  component: Outlet,
-  errorComponent: ({ reset }) => <main className="main-content"><ErrorState description="Не удалось открыть страницу. Попробуйте ещё раз." onRetry={reset} /></main>,
-  notFoundComponent: () => <main className="main-content"><ErrorState title="Страница не найдена" description="Вернитесь к списку встреч."><Button renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}>К встречам</Button></ErrorState></main>,
-})
+const rootRoute = createRootRoute({ component: Outlet, errorComponent: RouteError, notFoundComponent: NotFound })
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: () => <Navigate to="/meetings" search={{ q: '', offset: 0 }} replace /> })
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: lazyRouteComponent(() => import('./routes/login'), 'LoginPage') })
 const workspaceRoute = createRoute({ getParentRoute: () => rootRoute, id: '_workspace', component: WorkspaceShell })

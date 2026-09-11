@@ -1083,3 +1083,16 @@
     .meetings-library .page-heading h1, .audio-meeting-page .page-heading h1 { font-size: 26px; }
   }
 }
+
+/* Mantine language controls fit both full and collapsed sidebars. */
+.language-switcher { width: 150px; max-width: 100%; flex-shrink: 0; }
+.sidebar-footer .language-switcher { width: 100%; }
+.language-switcher.is-compact .mantine-Select-input { padding-left: 4px; padding-right: 16px; font-size: 11px; }
+.language-switcher.is-compact .mantine-Select-section { width: 16px; }
+.account-info { flex: 1; }
+.account-signout { flex-shrink: 0; margin-left: auto; }
+.sidebar-collapsed .account { flex-direction: column; gap: 4px; }
+.sidebar-collapsed .account-signout { margin-left: 0; }
+.login-brand { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.route-language { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+@media print { .language-switcher, .route-language { display: none !important; } }

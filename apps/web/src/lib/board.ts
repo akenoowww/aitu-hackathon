@@ -1,20 +1,21 @@
+import { t } from '../i18n'
 import { z } from 'zod'
 import { ApiError, errorMessage } from './api'
 import type { components } from './api.generated'
 
-export const kinds = { task: 'Поручения', decision: 'Решения', topic: 'Темы и тезисы', question: 'Открытые вопросы', risk: 'Риски и блокеры' }
-export const statuses = { todo: 'К выполнению', doing: 'В работе', blocked: 'Заблокировано', done: 'Готово', dismissed: 'В архиве' }
-export const agreements = { confirmed: 'Согласовано', proposed: 'Предложение', unclear: 'Нужно уточнить' }
+export const kinds = { get task() { return t("Поручения") }, get decision() { return t("Решения") }, get topic() { return t("Темы и тезисы") }, get question() { return t("Открытые вопросы") }, get risk() { return t("Риски и блокеры") } }
+export const statuses = { get todo() { return t("К выполнению") }, get doing() { return t("В работе") }, get blocked() { return t("Заблокировано") }, get done() { return t("Готово") }, get dismissed() { return t("В архиве") } }
+export const agreements = { get confirmed() { return t("Согласовано") }, get proposed() { return t("Предложение") }, get unclear() { return t("Нужно уточнить") } }
 export const clarificationLabels: Record<string, string> = {
-  agreement_unconfirmed: 'Уточните, согласована ли договорённость',
-  assignee_missing: 'Назначьте ответственного', deadline_missing: 'Уточните срок',
-  date_unresolved: 'Укажите календарную дату для озвученного срока',
-  priority_missing: 'Уточните приоритет, если он нужен',
+  get agreement_unconfirmed() { return t("Уточните, согласована ли договорённость") },
+  get assignee_missing() { return t("Назначьте ответственного") }, get deadline_missing() { return t("Уточните срок") },
+  get date_unresolved() { return t("Укажите календарную дату для озвученного срока") },
+  get priority_missing() { return t("Уточните приоритет, если он нужен") },
 }
-export const priorities = { unspecified: 'Не указан', low: 'Низкий', medium: 'Средний', high: 'Высокий' }
+export const priorities = { get unspecified() { return t("Не указан") }, get low() { return t("Низкий") }, get medium() { return t("Средний") }, get high() { return t("Высокий") } }
 export const cardInputSchema = z.object({
   kind: z.enum(['task', 'decision', 'topic', 'question', 'risk']),
-  title: z.string().trim().min(1, 'Укажите суть карточки').max(500),
+  title: z.string().trim().min(1, { error: () => t("Укажите суть карточки") }).max(500),
   description: z.string().max(4000), assignee: z.string().max(200).nullable(),
   due_date: z.iso.date().nullable(), due_text: z.string().max(200).nullable(),
   priority: z.enum(['unspecified', 'low', 'medium', 'high']),
@@ -77,20 +78,20 @@ export const boardApi = {
 export function boardError(error: unknown): string {
   const code = typeof error === 'string' ? error : error instanceof ApiError ? error.kind : ''
   const messages: Record<string, string> = {
-    BOARD_CONFLICT: 'Карточки изменились в другом окне. Обновите доску и повторите изменение.',
-    AMBIGUOUS_QUOTE: 'Этот фрагмент встречается в стенограмме несколько раз. Выберите более длинную уникальную цитату.',
-    QUOTE_NOT_FOUND: 'Цитата не совпадает со стенограммой. Скопируйте исходный фрагмент без изменений.',
-    INVALID_CORRECTION: 'Не удалось связать изменение с исходной договорённостью. Повторите разбор или заполните карточки вручную.',
-    SOURCE_CHANGED: 'Стенограмма изменилась. Откройте встречу заново, чтобы проверить источники.',
-    PROVIDER_UNAVAILABLE: 'Не удалось подключиться к локальной модели. Запустите её и повторите обработку.',
-    PROVIDER_TIMEOUT: 'Локальная модель не успела завершить обработку. Повторите попытку.',
-    PROVIDER_REJECTED: 'Локальная модель отклонила запрос. Проверьте, что модель установлена и запущена.',
-    UNGROUNDED_MODEL_RESPONSE: 'В результате найдены цитаты, которых нет в стенограмме. Повторите обработку или добавьте карточки вручную.',
-    TRANSCRIPT_NOT_READY: 'Для разбора встречи дождитесь готовой стенограммы.',
-    BOARD_FULL: 'На доске достигнут лимит в 1500 карточек.',
-    BOARD_EMPTY: 'Сначала добавьте карточку или разберите встречу.',
+    BOARD_CONFLICT: t("Карточки изменились в другом окне. Обновите доску и повторите изменение."),
+    AMBIGUOUS_QUOTE: t("Этот фрагмент встречается в стенограмме несколько раз. Выберите более длинную уникальную цитату."),
+    QUOTE_NOT_FOUND: t("Цитата не совпадает со стенограммой. Скопируйте исходный фрагмент без изменений."),
+    INVALID_CORRECTION: t("Не удалось связать изменение с исходной договорённостью. Повторите разбор или заполните карточки вручную."),
+    SOURCE_CHANGED: t("Стенограмма изменилась. Откройте встречу заново, чтобы проверить источники."),
+    PROVIDER_UNAVAILABLE: t("Не удалось подключиться к локальной модели. Запустите её и повторите обработку."),
+    PROVIDER_TIMEOUT: t("Локальная модель не успела завершить обработку. Повторите попытку."),
+    PROVIDER_REJECTED: t("Локальная модель отклонила запрос. Проверьте, что модель установлена и запущена."),
+    UNGROUNDED_MODEL_RESPONSE: t("В результате найдены цитаты, которых нет в стенограмме. Повторите обработку или добавьте карточки вручную."),
+    TRANSCRIPT_NOT_READY: t("Для разбора встречи дождитесь готовой стенограммы."),
+    BOARD_FULL: t("На доске достигнут лимит в 1500 карточек."),
+    BOARD_EMPTY: t("Сначала добавьте карточку или разберите встречу."),
   }
-  return messages[code] ?? errorMessage(error, 'Не удалось обработать доску. Попробуйте ещё раз.')
+  return messages[code] ?? errorMessage(error, t("Не удалось обработать доску. Попробуйте ещё раз."))
 }
 export function today() {
   const now = new Date()

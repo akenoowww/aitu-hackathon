@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     rag_embedding_local_url: str | None = None
     rag_local_api_key: SecretStr = SecretStr("")
     rag_provider_timeout: int = Field(default=180, ge=5, le=300)
-    rag_max_output_tokens: int = Field(default=8192, ge=1024, le=32768)
+    rag_max_output_tokens: int = Field(default=16384, ge=1024, le=32768)
     rag_child_chars: int = Field(default=800, ge=200, le=1600)
     rag_parent_chars: int = Field(default=3200, ge=800, le=8000)
     rag_context_chars: int = Field(default=18000, ge=4000, le=40000)

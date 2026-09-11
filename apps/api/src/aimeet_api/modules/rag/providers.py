@@ -1,6 +1,7 @@
 """Bounded provider adapters; no network calls during startup, no cloud fallback."""
 
 import json
+import logging
 import math
 from collections.abc import Sequence
 
@@ -8,7 +9,10 @@ import httpx
 from pydantic import ValidationError
 
 from aimeet_api.core.config import Settings
+from aimeet_api.modules.rag.response_schema import strict_response_schema
 from aimeet_api.modules.rag.schemas import AssistantDecision, GeneratedAnswer, TaskCreationPlan
+
+logger = logging.getLogger("aimeet.requests")
 
 
 class RagError(Exception):
@@ -163,7 +167,7 @@ class Providers:
     def _generate(self, instructions: str, context: str, response_model=GeneratedAnswer):
         config = self.config
         provider = config.rag_llm_provider
-        schema = response_model.model_json_schema()
+        schema = strict_response_schema(response_model)
         messages = [
             {"role": "system", "content": instructions},
             {"role": "user", "content": context},
@@ -189,6 +193,27 @@ class Providers:
                     },
                 },
             )
+            usage = data.get("usage") or {}
+            reason = (data.get("incomplete_details") or {}).get("reason")
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "rag_generation_finished",
+                        "model": config.rag_llm_model,
+                        "schema": response_model.__name__,
+                        "status": data.get("status"),
+                        "incomplete_reason": reason
+                        if reason in {"max_output_tokens", "max_tokens", "content_filter"}
+                        else None,
+                        "output_tokens": usage.get("output_tokens"),
+                        "reasoning_tokens": (usage.get("output_tokens_details") or {}).get(
+                            "reasoning_tokens"
+                        ),
+                    }
+                )
+            )
+            if reason in {"max_output_tokens", "max_tokens"} and data.get("status") == "incomplete":
+                raise RagError("MODEL_OUTPUT_LIMIT", 502)
             if data.get("status") != "completed":
                 raise RagError("INCOMPLETE_MODEL_RESPONSE", 502)
             parts = [
@@ -246,4 +271,15 @@ class Providers:
         try:
             return response_model.model_validate_json(raw)
         except (ValidationError, TypeError) as exc:
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "rag_invalid_response",
+                        "schema": response_model.__name__,
+                        "error_types": [e["type"] for e in exc.errors(include_input=False)]
+                        if isinstance(exc, ValidationError)
+                        else ["type_error"],
+                    }
+                )
+            )
             raise RagError("INVALID_MODEL_RESPONSE", 502) from exc

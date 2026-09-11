@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { z } from 'zod'
 import type { components } from './api.generated'
 
@@ -14,7 +15,7 @@ export const userSchema = z.object({
 
 export const languageSchema = z.enum(['auto', 'ru', 'kk', 'en'])
 export const languageLabels: Record<z.infer<typeof languageSchema>, string> = {
-  auto: 'Не указан', ru: 'Русский', kk: 'Қазақша', en: 'English',
+  get auto() { return t("Не указан") }, get ru() { return t("Русский") }, get kk() { return t("Қазақша") }, get en() { return t("English") },
 }
 export const transcriptionSchema = z.object({
   status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
@@ -40,15 +41,15 @@ export const meetingListSchema = z.object({
 }) satisfies z.ZodType<MeetingList>
 
 export const loginSchema = z.object({
-  email: z.email('Введите корректную электронную почту'),
-  password: z.string().min(1, 'Введите пароль').max(1024, 'Пароль слишком длинный'),
+  email: z.email({ error: () => t("Введите корректную электронную почту") }),
+  password: z.string().min(1, { error: () => t("Введите пароль") }).max(1024, { error: () => t("Пароль слишком длинный") }),
 }) satisfies z.ZodType<LoginInput>
 export const meetingCreateSchema = z.object({
-  title: z.string().trim().min(1, 'Введите название встречи').max(200, 'Не более 200 символов'),
+  title: z.string().trim().min(1, { error: () => t("Введите название встречи") }).max(200, { error: () => t("Не более 200 символов") }),
   language: languageSchema,
   // Transcript is source material: validation must never trim or rewrite it.
-  transcript: z.string().max(200_000, 'Не более 200 000 символов')
-    .refine((value) => value.trim().length > 0, 'Добавьте текст стенограммы'),
+  transcript: z.string().max(200_000, { error: () => t("Не более 200 000 символов") })
+    .refine((value) => value.trim().length > 0, { error: () => t("Добавьте текст стенограммы") }),
 }) satisfies z.ZodType<MeetingCreate>
 export const meetingSearchSchema = z.object({
   q: z.string().max(200).catch(''),

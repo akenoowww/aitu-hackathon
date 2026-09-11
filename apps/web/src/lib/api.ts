@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import type { z } from 'zod'
 import {
   userSchema, meetingListSchema, meetingDetailSchema,
@@ -54,15 +55,15 @@ export const api = {
   deleteMeeting: (id: string) => request(`/meetings/${encodeURIComponent(id)}`, null, { method: 'DELETE' }),
 }
 
-export function errorMessage(error: unknown, fallback = 'Не удалось загрузить данные. Попробуйте ещё раз.'): string {
+export function errorMessage(error: unknown, fallback = t("Не удалось загрузить данные. Попробуйте ещё раз.")): string {
   if (!(error instanceof ApiError)) return fallback
-  if (error.status === 401) return 'Войдите в рабочее пространство ещё раз.'
-  if (error.status === 403) return 'Недостаточно прав для этого действия.'
-  if (error.status === 404) return 'Встреча не найдена. Возможно, её уже удалили.'
-  if (error.status === 429) return 'Слишком много попыток. Попробуйте немного позже.'
-  if (error.status === 413) return 'Превышен размер загрузки: до 100 МБ для аудио или 200 000 символов для текста.'
-  if (error.status === 415) return 'Выберите аудиофайл в формате MP3, WAV или M4A.'
-  if (error.status === 409) return 'Действие сейчас недоступно. Обновите встречу и попробуйте ещё раз.'
-  if (error.status === 422) return 'Проверьте заполненные поля и повторите попытку.'
+  if (error.status === 401) return t("Войдите в рабочее пространство ещё раз.")
+  if (error.status === 403) return t("Недостаточно прав для этого действия.")
+  if (error.status === 404) return t("Встреча не найдена. Возможно, её уже удалили.")
+  if (error.status === 429) return t("Слишком много попыток. Попробуйте немного позже.")
+  if (error.status === 413) return t("Превышен размер загрузки: до 100 МБ для аудио или 200 000 символов для текста.")
+  if (error.status === 415) return t("Выберите аудиофайл в формате MP3, WAV или M4A.")
+  if (error.status === 409) return t("Действие сейчас недоступно. Обновите встречу и попробуйте ещё раз.")
+  if (error.status === 422) return t("Проверьте заполненные поля и повторите попытку.")
   return fallback
 }

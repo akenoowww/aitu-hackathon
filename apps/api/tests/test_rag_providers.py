@@ -251,3 +251,25 @@ def test_separate_local_embedding_endpoint():
         return httpx.Response(200, json={"data": [{"index": 0, "embedding": [1, 0, 0]}]})
 
     assert Providers(config, httpx.MockTransport(handler)).embed(["a"]) == [[1, 0, 0]]
+
+
+def test_reasoning_output_limit_is_distinguished_from_other_incomplete_responses():
+    provider = Providers(
+        settings(),
+        httpx.MockTransport(
+            lambda _: httpx.Response(
+                200,
+                json={
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": "max_output_tokens"},
+                    "output": [],
+                    "usage": {
+                        "output_tokens": 8192,
+                        "output_tokens_details": {"reasoning_tokens": 8192},
+                    },
+                },
+            )
+        ),
+    )
+    with pytest.raises(RagError, match="MODEL_OUTPUT_LIMIT"):
+        provider.generate("s", "q")

@@ -1,3 +1,4 @@
+import { t, useLocale } from '../../i18n'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Group, Text } from '@mantine/core'
 import { Play } from 'lucide-react'
@@ -7,6 +8,7 @@ import { timestamp } from '../../lib/transcription'
 export function LiveClipPlayer({ meetingId, clips, autoplay = false }: {
   meetingId: string; clips: MeetingAudioClip[]; autoplay?: boolean
 }) {
+  useLocale()
   const [selected, setSelected] = useState(clips[0].id)
   const [requestedPlay, setRequestedPlay] = useState(autoplay)
   const clip = clips.find((item) => item.id === selected) ?? clips[0]
@@ -18,6 +20,7 @@ export function LiveClipPlayer({ meetingId, clips, autoplay = false }: {
 }
 
 function ClipAudio({ src, autoplay }: { src: string; autoplay: boolean }) {
+  useLocale()
   const player = useRef<HTMLAudioElement>(null)
   useEffect(() => { const audio = player.current; return () => audio?.pause() }, [])
   const [failed, setFailed] = useState(false)
@@ -28,9 +31,9 @@ function ClipAudio({ src, autoplay }: { src: string; autoplay: boolean }) {
     try { await player.current.play() } catch { /* Native controls remain available if autoplay is blocked. */ }
   }
   return <>
-    <audio ref={player} controls preload="metadata" aria-label="Аудио реплики" src={src}
+    <audio ref={player} controls preload="metadata" aria-label={t("Аудио реплики")} src={src}
       onLoadedMetadata={() => { setReady(true); if (autoplay) void play() }} onError={() => setFailed(true)} />
-    <Button variant="light" leftSection={<Play size={15} />} disabled={!ready || failed} onClick={() => void play()}>Прослушать реплику</Button>
-    {failed && <Alert color="orange">Не удалось открыть аудио реплики. Закройте фрагмент и попробуйте ещё раз.</Alert>}
+    <Button variant="light" leftSection={<Play size={15} />} disabled={!ready || failed} onClick={() => void play()}>{t("Прослушать реплику")}</Button>
+    {failed && <Alert color="orange">{t("Не удалось открыть аудио реплики. Закройте фрагмент и попробуйте ещё раз.")}</Alert>}
   </>
 }

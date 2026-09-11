@@ -215,3 +215,21 @@ def test_created_tasks_are_saved_to_chat_in_same_transaction(authenticated_clien
     assert saved["turns"][0]["result"]["tasks"] == response.json()["tasks"]
     assert client.post("/api/v1/assistant/tasks", json=body).status_code == 200
     assert len(client.get(f"/api/v1/assistant/conversations/{cid}").json()["turns"]) == 1
+
+
+@pytest.mark.parametrize("target", ["created", "foreign", None])
+def test_created_tasks_only_open_model_selected_authorized_panel(
+    authenticated_client, planner, target
+):
+    mid = create_meeting(authenticated_client)
+    panel = None if target is None else {
+        "meeting_id": mid if target == "created" else str(uuid.uuid4()), "view": "kanban"
+    }
+    planner.response = TaskCreationPlan(
+        action="create", answer="", tasks=[draft(mid)], panel=panel
+    )
+    body = request_body()
+    response = authenticated_client.post("/api/v1/assistant/tasks", json=body)
+    assert response.status_code == 200, response.text
+    assert response.json()["panel"] == (panel if target == "created" else None)
+    assert authenticated_client.post("/api/v1/assistant/tasks", json=body).json() == response.json()

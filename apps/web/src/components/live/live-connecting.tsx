@@ -1,8 +1,10 @@
+import { t, useLocale } from '../../i18n'
 import { useId } from 'react'
 
-export function LiveConnecting({ title = 'Подключаемся к разговору', description = 'Устанавливаем голосовую связь', roomTitle }: {
+export function LiveConnecting({ title = t("Подключаемся к разговору"), description = t("Устанавливаем голосовую связь"), roomTitle }: {
   title?: string; description?: string; roomTitle?: string;
 }) {
+  useLocale()
   const id = useId()
   return <section className="live-connecting" role="status" aria-live="polite" aria-atomic="true">
     <div className="live-connecting-art" aria-hidden="true">

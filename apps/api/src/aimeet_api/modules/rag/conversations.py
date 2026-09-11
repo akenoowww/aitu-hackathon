@@ -133,7 +133,13 @@ def start_turn(db, user, conversation_id, payload):
         existing.conversation_id != conversation_id or existing.question != payload.question
     ):
         raise HTTPException(409, "Turn already used")
-    result = {"mode": payload.state, "answer": "", "activity": payload.activity}
+    result = {
+        "mode": payload.state,
+        "answer": "",
+        "activity": payload.activity,
+        "error_code": payload.error_code if payload.state == "failed" else None,
+        "error_status": payload.error_status if payload.state == "failed" else None,
+    }
     if existing:
         if existing.result.get("mode") not in {"pending", "failed"}:
             return turn_output(existing)

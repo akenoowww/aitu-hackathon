@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test, type Page, type Route } from '@playwright/test';
 
+test.use({ locale: 'ru-RU' });
+
 function conversationStore() {
   const chats = new Map<string, { id: string; title: string; created_at: string; updated_at: string; turns: Array<Record<string, unknown>> }>();
   return async (route: Route) => {
@@ -20,7 +22,7 @@ function conversationStore() {
       const oldResult = existing?.result as { mode: string; activity?: string } | undefined;
       if (existing && oldResult?.mode !== 'pending' && oldResult?.mode !== 'failed') return route.fulfill({ json: existing });
       const result = parts[6] === 'pending'
-        ? { mode: data.state, answer: '', activity: oldResult?.activity === 'creating' ? 'creating' : data.activity }
+        ? { mode: data.state, answer: '', activity: oldResult?.activity === 'creating' ? 'creating' : data.activity, error_code: data.error_code ?? null, error_status: data.error_status ?? null }
         : data.result;
       const saved = { id: data.id, question: data.question, result, created_at: existing?.created_at ?? new Date().toISOString() };
       if (existing) chat.turns = chat.turns.map((item) => item.id === saved.id ? saved : item);
@@ -247,7 +249,7 @@ test('workspace chat searches existing meetings without manual preparation', asy
     failed: 0, not_indexed: !ready && !indexRequests ? 1 : 0, unavailable: 0 });
   const chatStore = conversationStore();
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
     const method = route.request().method();
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: userId, email: 'qa@example.com', display_name: 'QA' } });
@@ -459,7 +461,7 @@ test('assistant chats with history and helps without touching meeting search', a
   let messages = 0;
   const chatStore = conversationStore();
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: randomUUID(), email: 'qa@example.com', display_name: 'QA' } });
     if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: false, llm_provider: 'openai', llm_model: 'gpt-5.6-luna', reasoning_effort: 'max', embedding_provider: 'openai', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: true } });
@@ -570,7 +572,7 @@ for (const sourceType of ['text', 'audio'] as const) {
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/api/v1/**', async (route) => {
-      const path = new URL(route.request().url()).pathname;
+      const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
       if (path.endsWith('/auth/me')) return route.fulfill({ json: {
         id: '11111111-1111-4111-8111-111111111111', email: 'preview@example.com', display_name: 'Тестовый профиль',
       } });
@@ -656,7 +658,7 @@ test('saved live outcomes appear in insights and kanban even without tasks', asy
   const quote = 'Почему не появляется текст разговора?';
   const card = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'question', title: 'Выяснить причину отсутствия текста', description: '', assignee: null, due_date: null, due_text: null, priority: 'unspecified', status: 'todo', reviewed: false, quote, quote_start: 0, start_char: 0, end_char: quote.length, agreement: 'unclear', origin: 'ai', revisions: [], clarifications: [], evidence: null };
   await page.route('**/api/v1/**', async route => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: mid, display_name: 'Проверка', email: 'qa@example.com' } });
     if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Сохранённый разговор', language: 'ru', source_type: 'text', status: 'transcribed', transcript: quote, transcript_length: quote.length, segments: null, audio_filename: null, audio_bytes: null, transcription: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
     if (path.endsWith('/board')) return route.fulfill({ json: { status: 'ready', version: 1, progress: 100, error_code: null, cards: [card], summary: [{ text: 'Обсудили отображение стенограммы.', quote }] } });
@@ -685,7 +687,7 @@ test('assistant cites outcomes and shows real task creation progress with safe r
   const coverage = { total: 1, ready: 1, pending: 0, failed: 0, not_indexed: 0, unavailable: 0 };
   const chatStore = conversationStore();
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: '11111111-1111-4111-8111-111111111111', email: 'qa@example.com', display_name: 'QA' } });
     if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'max', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
@@ -761,7 +763,7 @@ test('kanban drag and drop saves status and category, cancels and rolls back fai
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'qa@example.test', display_name: 'Тест DnD' } });
     if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Тест канбана', language: 'ru', source_type: 'text', status: 'transcribed', transcript: 'Алия: обсудим запуск.', transcript_length: 20, segments: null, transcription: null, audio_filename: null, audio_bytes: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
     if (path.endsWith('/board')) return route.fulfill({ json: board() });
@@ -888,7 +890,7 @@ for (const audioAvailable of [true, false]) {
       return bytes;
     }
     await page.route('**/api/v1/**', async route => {
-      const path = new URL(route.request().url()).pathname;
+      const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
       if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'fixture@example.com', display_name: 'Проверка' } });
       if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: {
         id: mid, title: 'ТЕСТ записи звонка', language: 'ru', status: 'transcribed', source_type: audioAvailable ? 'audio' : 'text',
@@ -961,7 +963,7 @@ test('card editor is wide and saves and clears a Russian Mantine calendar date',
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/v1/**', async route => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'preview@example.test', display_name: 'Проверка календаря' } });
     if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Тест календаря', language: 'ru', status: 'transcribed', source_type: 'text', transcript: 'Обсудим смету.', transcript_length: 13, transcription: null, segments: null, audio_filename: null, audio_bytes: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
     if (path.endsWith(`/cards/${card.id}`)) {
@@ -1031,7 +1033,7 @@ test('pending message survives navigation and finishes in its original chat', as
   let plans = 0;
   let pendingSaves = 0;
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.startsWith('/api/v1/assistant/conversations')) {
       if (path.endsWith('/pending')) pendingSaves++;
       return chatStore(route);
@@ -1080,7 +1082,7 @@ test('reload resumes a persisted pending message without duplicating it', async 
   let plans = 0;
   const ids: string[] = [];
   await page.route('**/api/v1/**', async (route) => {
-    const path = new URL(route.request().url()).pathname;
+    const path = new URL(route.request().url()).pathname.replace(/\/(assistant|rag)\/chat\/stream$/, '/$1/chat');
     if (path.startsWith('/api/v1/assistant/conversations')) {
       if (path.endsWith('/pending')) ids.push(route.request().postDataJSON().id);
       return chatStore(route);
@@ -1106,4 +1108,75 @@ test('reload resumes a persisted pending message without duplicating it', async 
   expect(plans).toBe(2);
   expect(new Set(ids).size).toBe(1);
   await expect(page.locator('.workspace-chat-question')).toHaveCount(1);
+});
+
+test('streamed text is visible before completion and stream errors survive reload', async ({ page }) => {
+  const chatStore = conversationStore();
+  const uid = randomUUID();
+  let completedSaves = 0;
+  await page.addInitScript(() => {
+    const nativeFetch = window.fetch.bind(window);
+    const holder = window as unknown as { emitChatEvent?: (event: unknown) => void; chatStreamReady?: boolean };
+    window.fetch = async (input, init) => {
+      const url = new URL(typeof input === 'string' ? input : input instanceof Request ? input.url : input.toString(), location.href);
+      if (url.pathname !== '/api/v1/assistant/chat/stream') return nativeFetch(input, init);
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          holder.chatStreamReady = true;
+          holder.emitChatEvent = (event) => {
+            const bytes = encoder.encode('data: ' + JSON.stringify(event) + '\r\n\r\n');
+            // Deliberately split UTF-8/SSE across byte chunks.
+            controller.enqueue(bytes.slice(0, 37));
+            controller.enqueue(bytes.slice(37, bytes.length - 3));
+            controller.enqueue(bytes.slice(bytes.length - 3));
+          };
+        },
+        cancel() { holder.chatStreamReady = false; holder.emitChatEvent = undefined; },
+      });
+      return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
+    };
+  });
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) {
+      if (path.endsWith('/turns')) completedSaves++;
+      return chatStore(route);
+    }
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: uid, email: 'qa@example.com', display_name: 'QA' } });
+    if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: false, llm_provider: 'openai', llm_model: 'gpt-5.6-luna', reasoning_effort: 'max', embedding_provider: 'openai', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: true } });
+    if (path === '/api/v1/meetings') return route.fulfill({ json: { items: [], total: 0, limit: 20, offset: 0 } });
+    throw new Error(`Unexpected request ${path}`);
+  });
+  const emit = (event: unknown) => page.evaluate((data) => (window as unknown as { emitChatEvent: (event: unknown) => void }).emitChatEvent(data), event);
+  const streamReady = () => expect.poll(() => page.evaluate(() => (window as unknown as { chatStreamReady: boolean }).chatStreamReady)).toBe(true);
+  await page.goto('/chat');
+  const input = page.getByRole('textbox', { name: 'Сообщение ассистенту' });
+  const send = page.getByRole('button', { name: 'Отправить вопрос' });
+  await input.fill('Привет');
+  await send.click();
+  await streamReady();
+  await emit({ type: 'delta', text: 'Привет' });
+  await expect(page.locator('.workspace-assistant-text')).toHaveText('Привет');
+  expect(completedSaves).toBe(0);
+  const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
+  await navigation.getByRole('link', { name: 'Встречи', exact: true }).click();
+  await navigation.getByRole('link', { name: 'Чат', exact: true }).click();
+  await expect(page.locator('.workspace-assistant-text')).toHaveText('Привет');
+  await emit({ type: 'delta', text: '! Чем помочь?' });
+  await expect(page.locator('.workspace-assistant-text')).toHaveText('Привет! Чем помочь?');
+  expect(completedSaves).toBe(0);
+  await emit({ type: 'result', data: { action: 'reply', answer: 'Привет! Чем помочь?', search_query: '' } });
+  await expect.poll(() => completedSaves).toBe(1);
+  await expect(page.locator('.workspace-chat-thinking')).toHaveCount(0);
+  await input.fill('Вопрос с обрывом');
+  await send.click();
+  await streamReady();
+  await emit({ type: 'delta', text: 'Незавершённый ответ' });
+  await emit({ type: 'error', code: 'MODEL_OUTPUT_LIMIT', status: 502 });
+  await expect(page.getByRole('alert')).toContainText('Модели не хватило лимита');
+  expect(completedSaves).toBe(1);
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('Модели не хватило лимита');
+  await expect(page.getByRole('heading', { name: 'Вопрос с обрывом', exact: true })).toBeVisible();
 });

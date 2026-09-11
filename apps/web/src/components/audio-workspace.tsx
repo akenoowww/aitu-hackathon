@@ -1,3 +1,4 @@
+import { t, useLocale } from '../i18n'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Anchor, Button, Group, Progress, Stack, Tabs, Text, Title } from '@mantine/core'
@@ -17,16 +18,17 @@ import './meeting-workspace.css'
 
 export type MeetingView = 'conversation' | 'insights' | 'kanban'
 const noteKinds = {
-  task: { label: 'Поручение', icon: CheckSquare },
-  decision: { label: 'Решение', icon: Check },
-  topic: { label: 'Тема', icon: Lightbulb },
-  question: { label: 'Открытый вопрос', icon: CircleHelp },
-  risk: { label: 'Риск', icon: TriangleAlert },
+  task: { get label() { return t("Поручение") }, icon: CheckSquare },
+  decision: { get label() { return t("Решение") }, icon: Check },
+  topic: { get label() { return t("Тема") }, icon: Lightbulb },
+  question: { get label() { return t("Открытый вопрос") }, icon: CircleHelp },
+  risk: { get label() { return t("Риск") }, icon: TriangleAlert },
 }
 
 export function MeetingWorkspace({ meeting, view, onViewChange }: {
   meeting: MeetingDetail; view: MeetingView; onViewChange: (view: MeetingView) => void
 }) {
+  useLocale()
   const cache = useQueryClient()
   const pane = useRef<HTMLDivElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
@@ -99,47 +101,47 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
     if (processing && following.current && pane.current && view === 'conversation') pane.current.scrollTop = pane.current.scrollHeight
   }, [processing, segments.length, view])
 
-  return <section className="meeting-workspace" aria-label="Рабочее пространство встречи">
+  return <section className="meeting-workspace" aria-label={t("Рабочее пространство встречи")}>
     {isAudio && (processing || analyzing || (!recognized && meeting.status !== 'transcribed')) && <div className="meeting-processing no-print">
       <div className="audio-processing-header">
         <div className={`audio-processing-icon ${processing || analyzing ? 'is-processing' : ''}`} aria-hidden="true">{complete ? <Check size={23} /> : <AudioLines size={23} />}</div>
         <div className="audio-processing-copy">
-          <Text fw={500} role="status">{processing ? meeting.transcription?.status === 'queued' ? 'Запись в очереди' : 'Распознаём запись' : analyzing ? 'Готовим итоги' : 'Обработка остановлена'}</Text>
-          <Text size="sm" c="dimmed">{processing ? `${timestamp(processedSeconds)}${duration ? ` из ${timestamp(duration)}` : ''} · Текст появляется по мере распознавания` : analyzing ? 'Итоги дополняются по мере анализа записи' : meeting.audio_filename}</Text>
+          <Text fw={500} role="status">{processing ? meeting.transcription?.status === 'queued' ? t("Запись в очереди") : t("Распознаём запись") : analyzing ? t("Готовим итоги") : t("Обработка остановлена")}</Text>
+          <Text size="sm" c="dimmed">{processing ? t("{0}{1} · Текст появляется по мере распознавания", { "0": timestamp(processedSeconds), "1": duration ? t(" из {0}", { "0": timestamp(duration) }) : '' }) : analyzing ? t("Итоги дополняются по мере анализа записи") : meeting.audio_filename}</Text>
         </div>
       </div>
-      {(processing || analyzing) && <Progress value={processing ? meeting.transcription?.progress ?? 0 : board.data?.progress ?? 0} aria-label={processing ? 'Распознавание записи' : 'Подготовка итогов'} size={3} />}
+      {(processing || analyzing) && <Progress value={processing ? meeting.transcription?.progress ?? 0 : board.data?.progress ?? 0} aria-label={processing ? t("Распознавание записи") : t("Подготовка итогов")} size={3} />}
       <Transcription meeting={meeting} compact />
     </div>}
     <Tabs value={view} onChange={(value) => { if (value) changeView(value as MeetingView) }} keepMounted={false} className="live-mode-tabs saved-meeting-tabs">
-      <Tabs.List justify="center" aria-label="Разделы встречи">
-        <Tabs.Tab value="conversation">Разговор</Tabs.Tab>
-        <Tabs.Tab value="insights">Итоги</Tabs.Tab>
-        <Tabs.Tab value="kanban">Канбан</Tabs.Tab>
+      <Tabs.List justify="center" aria-label={t("Разделы встречи")}>
+        <Tabs.Tab value="conversation">{t("Разговор")}</Tabs.Tab>
+        <Tabs.Tab value="insights">{t("Итоги")}</Tabs.Tab>
+        <Tabs.Tab value="kanban">{t("Канбан")}</Tabs.Tab>
       </Tabs.List>
       <div className={`live-focus-pane saved-meeting-pane ${view === 'kanban' ? 'is-kanban' : ''}`} ref={pane}
         onScroll={(event) => { const element = event.currentTarget; savedScroll.current[view] = element.scrollTop; if (view === 'conversation') following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80 }}>
         <Tabs.Panel value="conversation" className="saved-conversation">
-          {canPlayFull && <div className="audio-source"><Text size="sm" fw={500} mb="xs">Запись всей беседы</Text><audio ref={audio} controls preload="none" aria-label="Аудиозапись встречи" src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`}
+          {canPlayFull && <div className="audio-source"><Text size="sm" fw={500} mb="xs">{t("Запись всей беседы")}</Text><audio ref={audio} controls preload="none" aria-label={t("Аудиозапись встречи")} src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`}
             onLoadedMetadata={() => { if (audio.current && pendingSeek.current !== null) { audio.current.currentTime = pendingSeek.current; pendingSeek.current = null } }} /></div>}
-          {['queued', 'processing'].includes(recording.data?.recording_status ?? '') && <Text size="sm" role="status" mb="md">Сохраняем полную аудиозапись беседы…</Text>}
-          {recording.data?.source === 'live' && !canPlayFull && recording.data.recording_status === 'none' && <Text size="sm" c="dimmed" mb="md">Полная аудиозапись этой беседы не сохранилась.</Text>}
-          {recording.data?.recording_status === 'failed' && <InlineError>Не удалось собрать полную запись. <Button variant="subtle" loading={retryRecording.isPending} onClick={() => retryRecording.mutate()}>Повторить сохранение</Button></InlineError>}
-          {retryRecording.isError && <InlineError>Не удалось повторить сохранение. Обновите страницу и попробуйте ещё раз.</InlineError>}
-          <section aria-label="Стенограмма разговора" data-testid="meeting-conversation">
+          {['queued', 'processing'].includes(recording.data?.recording_status ?? '') && <Text size="sm" role="status" mb="md">{t("Сохраняем полную аудиозапись беседы…")}</Text>}
+          {recording.data?.source === 'live' && !canPlayFull && recording.data.recording_status === 'none' && <Text size="sm" c="dimmed" mb="md">{t("Полная аудиозапись этой беседы не сохранилась.")}</Text>}
+          {recording.data?.recording_status === 'failed' && <InlineError>{t("Не удалось собрать полную запись.")} <Button variant="subtle" loading={retryRecording.isPending} onClick={() => retryRecording.mutate()}>{t("Повторить сохранение")}</Button></InlineError>}
+          {retryRecording.isError && <InlineError>{t("Не удалось повторить сохранение. Обновите страницу и попробуйте ещё раз.")}</InlineError>}
+          <section aria-label={t("Стенограмма разговора")} data-testid="meeting-conversation">
             {segments.length ? segments.map((segment, index) => <article data-transcript-segment data-start={segment.start} data-end={segment.end} data-start-char={ranges[index]?.start} data-end-char={ranges[index]?.end} tabIndex={-1} key={`${index}-${segment.start}`} className="live-utterance saved-utterance">
               <Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text><Text className="live-utterance-text"><SourceHighlight text={segment.text} offset={ranges[index]?.start} selection={focusedSource} /></Text>
-              {ranges[index] && (canPlayFull || (recording.data?.clips ?? []).some((clip) => clip.available && clip.start_char < ranges[index].end && clip.end_char > ranges[index].start)) && <Button variant="subtle" size="compact-sm" mt="xs" onClick={() => openSource({ quote: segment.text, start_char: ranges[index].start, end_char: ranges[index].end, start_seconds: segment.start, end_seconds: segment.end, speaker: null }, true)}>Прослушать реплику</Button>}
-            </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}><SourceHighlight text={meeting.transcript} offset={0} selection={focusedSource} /></div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>Здесь появится разговор</Title><Text c="dimmed">{processing ? 'Первые реплики появятся по мере распознавания записи.' : 'Распознайте запись, чтобы прочитать стенограмму.'}</Text></div>}
-            {processing && segments.length > 0 && <Text className="audio-feed-continuation" size="sm" c="dimmed">Продолжаем распознавать…</Text>}
+              {ranges[index] && (canPlayFull || (recording.data?.clips ?? []).some((clip) => clip.available && clip.start_char < ranges[index].end && clip.end_char > ranges[index].start)) && <Button variant="subtle" size="compact-sm" mt="xs" onClick={() => openSource({ quote: segment.text, start_char: ranges[index].start, end_char: ranges[index].end, start_seconds: segment.start, end_seconds: segment.end, speaker: null }, true)}>{t("Прослушать реплику")}</Button>}
+            </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}><SourceHighlight text={meeting.transcript} offset={0} selection={focusedSource} /></div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>{t("Здесь появится разговор")}</Title><Text c="dimmed">{processing ? t("Первые реплики появятся по мере распознавания записи.") : t("Распознайте запись, чтобы прочитать стенограмму.")}</Text></div>}
+            {processing && segments.length > 0 && <Text className="audio-feed-continuation" size="sm" c="dimmed">{t("Продолжаем распознавать…")}</Text>}
           </section>
         </Tabs.Panel>
         <Tabs.Panel value="insights" className="saved-insights">
-          {board.isPending && <Text role="status">Загружаем итоги…</Text>}
-          {board.isError && <InlineError>{boardError(board.error)} <Button variant="subtle" onClick={() => void board.refetch()}>Повторить загрузку итогов</Button></InlineError>}
+          {board.isPending && <Text role="status">{t("Загружаем итоги…")}</Text>}
+          {board.isError && <InlineError>{boardError(board.error)} <Button variant="subtle" onClick={() => void board.refetch()}>{t("Повторить загрузку итогов")}</Button></InlineError>}
           {!board.isError && board.data && <>
-            {analyzing && <Text size="sm" c="dimmed" mb="md">Готовим итоги встречи. Промежуточные выводы могут уточняться.</Text>}
-            {board.data.status === 'failed' && <InlineError>{boardError(board.data.error_code)} Промежуточные выводы могут быть неполными.</InlineError>}
+            {analyzing && <Text size="sm" c="dimmed" mb="md">{t("Готовим итоги встречи. Промежуточные выводы могут уточняться.")}</Text>}
+            {board.data.status === 'failed' && <InlineError>{boardError(board.data.error_code)} {t("Промежуточные выводы могут быть неполными.")}</InlineError>}
             <Stack gap="md">{notes.map((card) => {
               const kind = noteKinds[card.kind]; const Icon = kind.icon
               const evidence = card.quote ? resolveMeetingEvidence(meeting, card.quote, card.evidence, card.start_char) : null
@@ -151,10 +153,10 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
                   audioMissing={!playable && matching.length > 0 && ['none', 'ready', 'failed'].includes(recording.data?.recording_status ?? '')} />}</div>
               </article>
             })}</Stack>
-            {!notes.length && <div className="live-empty"><Sparkles size={29} aria-hidden="true" /><Title order={2}>{processing ? 'Сначала распознаем разговор' : analyzing ? 'Готовим первые итоги' : 'Итогов пока нет'}</Title><Text c="dimmed">Здесь появятся темы, решения, поручения и открытые вопросы встречи.</Text></div>}
-            {recognized && board.data.status === 'failed' && <Group justify="center" mt="lg"><Button loading={generation.isPending} onClick={() => generation.mutate()}>Повторить анализ</Button></Group>}
+            {!notes.length && <div className="live-empty"><Sparkles size={29} aria-hidden="true" /><Title order={2}>{processing ? t("Сначала распознаем разговор") : analyzing ? t("Готовим первые итоги") : t("Итогов пока нет")}</Title><Text c="dimmed">{t("Здесь появятся темы, решения, поручения и открытые вопросы встречи.")}</Text></div>}
+            {recognized && board.data.status === 'failed' && <Group justify="center" mt="lg"><Button loading={generation.isPending} onClick={() => generation.mutate()}>{t("Повторить анализ")}</Button></Group>}
             {generation.isError && <InlineError>{boardError(generation.error)}</InlineError>}
-            {notes.some((card) => card.kind === 'task') && <Group justify="center" mt="lg"><Button variant="light" leftSection={<ListChecks size={18} />} onClick={() => changeView('kanban')}>К поручениям в канбане</Button></Group>}
+            {notes.some((card) => card.kind === 'task') && <Group justify="center" mt="lg"><Button variant="light" leftSection={<ListChecks size={18} />} onClick={() => changeView('kanban')}>{t("К поручениям в канбане")}</Button></Group>}
           </>}
         </Tabs.Panel>
         <Tabs.Panel value="kanban" className="saved-kanban">
@@ -167,6 +169,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
 }
 
 function SourceHighlight({ text, offset, selection }: { text: string; offset?: number; selection: Evidence | null }) {
+  useLocale()
   if (offset === undefined || !selection) return text
   const characters = Array.from(text)
   const start = Math.max(0, selection.start_char - offset)
@@ -178,14 +181,15 @@ function SourceHighlight({ text, offset, selection }: { text: string; offset?: n
 function SavedSource({ quote, evidence, onConversation, onOpen, onListen, audioMissing }: {
   quote: string; evidence: Evidence | null; onConversation: (quote: string, evidence: Evidence | null) => void; onOpen: (evidence: Evidence) => void; onListen?: () => void; audioMissing?: boolean
 }) {
+  useLocale()
   return <div className="saved-insight-source">
-    <Text size="xs" c="dimmed">Из разговора{evidence?.speaker ? ` · ${evidence.speaker}` : ''}{evidence?.start_seconds !== null && evidence?.start_seconds !== undefined ? ` · ${timestamp(evidence.start_seconds)}` : ''}</Text>
+    <Text size="xs" c="dimmed">{t("Из разговора")}{evidence?.speaker ? ` · ${evidence.speaker}` : ''}{evidence?.start_seconds !== null && evidence?.start_seconds !== undefined ? ` · ${timestamp(evidence.start_seconds)}` : ''}</Text>
     <blockquote>{quote}</blockquote>
     <Group gap="md" wrap="wrap">
-      {onListen && <Button variant="light" size="compact-sm" onClick={onListen}>Прослушать момент</Button>}
-      {evidence && <Button variant="subtle" size="compact-sm" onClick={() => onOpen(evidence)}>Открыть фрагмент</Button>}
-      <Anchor component="button" className="live-source-link" onClick={() => onConversation(quote, evidence)}>К разговору<ArrowRight size={15} aria-hidden="true" /></Anchor>
+      {onListen && <Button variant="light" size="compact-sm" onClick={onListen}>{t("Прослушать момент")}</Button>}
+      {evidence && <Button variant="subtle" size="compact-sm" onClick={() => onOpen(evidence)}>{t("Открыть фрагмент")}</Button>}
+      <Anchor component="button" className="live-source-link" onClick={() => onConversation(quote, evidence)}>{t("К разговору")}<ArrowRight size={15} aria-hidden="true" /></Anchor>
     </Group>
-    {audioMissing && <Text size="xs" c="dimmed">Аудио этого момента не сохранилось.</Text>}
+    {audioMissing && <Text size="xs" c="dimmed">{t("Аудио этого момента не сохранилось.")}</Text>}
   </div>
 }

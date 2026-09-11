@@ -56,11 +56,18 @@ class AssistantTaskDraft(BaseModel):
     due_text: str | None = Field(max_length=200)
 
 
+class MeetingPanelAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meeting_id: uuid.UUID
+    view: Literal["kanban", "insights", "conversation"]
+
+
 class TaskCreationPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
     action: Literal["create", "clarify"]
     answer: str = Field(max_length=3000)
     tasks: list[AssistantTaskDraft] = Field(max_length=10)
+    panel: MeetingPanelAction | None = None
 
 
 class CreatedTask(AssistantTaskDraft):
@@ -73,6 +80,7 @@ class TaskCreationResult(BaseModel):
     status: Literal["created", "clarification"]
     answer: str
     tasks: list[CreatedTask]
+    panel: MeetingPanelAction | None = None
 
 
 class IndexStatus(BaseModel):
@@ -98,6 +106,7 @@ class GeneratedAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     status: Literal["answered", "insufficient_evidence"]
     claims: list[Claim] = Field(max_length=12)
+    panel: MeetingPanelAction | None = None
 
 
 class Source(BaseModel):
@@ -209,6 +218,7 @@ class WorkspaceClaim(BaseModel):
 
 
 class WorkspaceAnswer(BaseModel):
+    panel: MeetingPanelAction | None = None
     status: Literal["answered", "insufficient_evidence"]
     answer: str
     claims: list[WorkspaceClaim]
@@ -284,12 +294,16 @@ class PendingChatResult(BaseModel):
     mode: Literal["pending", "failed"]
     answer: Literal[""] = ""
     activity: Literal["thinking", "creating"] = "thinking"
+    error_code: str | None = None
+    error_status: int | None = None
 
 
 class ConversationTurnStart(Question):
     id: uuid.UUID
     state: Literal["pending", "failed"] = "pending"
     activity: Literal["thinking", "creating"] = "thinking"
+    error_code: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    error_status: int | None = Field(default=None, ge=400, le=599)
 
 
 class ConversationTurnOutput(Question):

@@ -25,7 +25,7 @@ export function runConversationTurn(userId: string, conversationId: string, ques
   if (!sameUser()) return Promise.resolve()
   const detail = queryClient.getQueryData<ConversationDetail>(historyKey)
   const existing = detail?.turns.find((turn) => turn.id === id)
-  let current: ConversationTurn = existing ?? { id, question, result: { mode: 'pending', answer: '', activity: 'thinking' }, created_at: new Date().toISOString() }
+  let current: ConversationTurn = existing ?? { id, question, result: { mode: 'pending', answer: '', activity: 'thinking', error_code: null, error_status: null }, created_at: new Date().toISOString() }
   let activity: 'thinking' | 'creating' = unfinished(current) && 'activity' in current.result ? current.result.activity : 'thinking'
   const prior = detail?.turns.slice(0, existing ? detail.turns.findIndex((turn) => turn.id === id) : undefined) ?? []
   const context: ConversationMessage[] = prior.filter((turn) => !unfinished(turn)).slice(-10).flatMap((turn) => [
@@ -40,7 +40,7 @@ export function runConversationTurn(userId: string, conversationId: string, ques
     queryClient.setQueryData<ConversationJob>(jobKey, { state, turn, error })
     queryClient.setQueryData<ConversationDetail>(historyKey, (old) => old ? mergeConversationTurn(old, turn) : old)
   }
-  publish({ ...current, result: { mode: 'pending', answer: '', activity } }, 'running')
+  publish({ ...current, result: { mode: 'pending', answer: '', activity, error_code: null, error_status: null } }, 'running')
   // Navigation does not cancel the job; logout/account changes do.
   const unsubscribe = queryClient.getQueryCache().subscribe(() => { if (!sameUser()) controller.abort() })
   const promise = (async () => {
@@ -50,7 +50,13 @@ export function runConversationTurn(userId: string, conversationId: string, ques
       void queryClient.invalidateQueries({ queryKey: ['assistant-chats', userId, 'list'] })
       if (!unfinished(started)) return
       if ('activity' in started.result) activity = started.result.activity
+      let streamed = ''
       const result = await talkToAssistant(question, context, controller.signal, {
+        onDelta: (delta) => {
+          streamed += delta
+          if (streamed.length > 48000) return
+          if (sameUser() && unfinished(current)) publish({ ...current, result: { ...current.result, partial_text: streamed } } as ConversationTurn, 'running')
+        },
         id, conversationId, retryTask: activity === 'creating',
         onTaskStart: async () => {
           activity = 'creating'
@@ -65,9 +71,11 @@ export function runConversationTurn(userId: string, conversationId: string, ques
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) queryClient.setQueryData(['session'], null)
       if (!sameUser() || controller.signal.aborted) return
-      publish({ ...current, result: { mode: 'failed', answer: '', activity } }, 'running', ragError(error, 'workspace'))
+      const error_code = error instanceof ApiError ? error.kind : 'CLIENT_ERROR'
+      const error_status = error instanceof ApiError ? error.status : 500
+      publish({ ...current, result: { mode: 'failed', answer: '', activity, error_code, error_status } }, 'running', ragError(error, 'workspace'))
       try {
-        const saved = await conversationsApi.startTurn(conversationId, { id, question, state: 'failed', activity }, controller.signal)
+        const saved = await conversationsApi.startTurn(conversationId, { id, question, state: 'failed', activity, error_code, error_status }, controller.signal)
         publish(saved, unfinished(saved) ? 'failed' : 'running', unfinished(saved) ? ragError(error, 'workspace') : undefined)
       } catch { publish(current, 'failed', ragError(error, 'workspace')) }
     } finally {

@@ -13,7 +13,9 @@
     "lint": "eslint . --max-warnings 0",
     "preview": "vite preview --host 127.0.0.1",
     "generate:api": "openapi-typescript ../../packages/contracts/openapi.json -o src/lib/api.generated.d.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check:i18n": "node scripts/check-i18n.mjs",
+    "test:i18n": "npm run check:i18n && playwright test --config playwright.i18n.config.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "6.3.1",

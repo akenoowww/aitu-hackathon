@@ -101,3 +101,75 @@
     .workspace-chats .workspace-chat { min-height: calc(100svh - 180px); }
   }
 }
+
+/* Constrain the full height chain so only the message body scrolls. */
+@layer responsive {
+  .workspace-chat-route { height: 100dvh; min-height: 0; overflow: hidden; }
+  .workspace-chat-route > .main-content { height: 100%; min-height: 0; overflow: hidden; }
+  .workspace-chat-route .workspace-chats { height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  .workspace-chat-route .workspace-chat { height: 100%; min-height: 0; overflow: hidden; }
+  .workspace-chat-route .assistant-conversations { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .workspace-chat-route .assistant-conversations > .mantine-Button-root { flex-shrink: 0; }
+  .workspace-chat-route .assistant-conversations nav { min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+  .workspace-chat-header, .workspace-chat-composer-wrap { flex-shrink: 0; }
+  .workspace-chat-subtitle { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .workspace-chat-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+  .workspace-chat-body .workspace-chat-welcome { min-height: 100%; }
+  .workspace-chat-body .workspace-chat-conversation { margin: 0; padding: 20px 0; }
+  .workspace-chat-composer-wrap { margin-top: 0; }
+  @media (max-width: 760px) {
+    .workspace-chat-route .workspace-chats { grid-template-rows: auto minmax(0, 1fr); gap: 12px; }
+    .workspace-chat-route .assistant-conversations nav { max-height: 60px; overflow-y: hidden; }
+    .workspace-chat-route .workspace-chat { gap: 12px; }
+  }
+}
+
+@layer layout {
+  .workspace-chat-citations { display: flex; flex-wrap: wrap; gap: 10px; }
+  .workspace-chat-citations > .workspace-chat-source { flex: 1 1 100%; }
+  .workspace-chat-board-source { display: flex; align-items: center; gap: 12px; flex: 0 1 360px; max-width: 100%; min-width: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); text-align: left; font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
+  .workspace-chat-board-source:hover { border-color: var(--mantine-color-forest-4); background: var(--mantine-color-forest-0); }
+  .chat-source-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: var(--mantine-color-forest-0); color: var(--mantine-color-forest-7); flex-shrink: 0; }
+  .chat-source-copy { min-width: 0; flex: 1; }
+  .chat-source-kind { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 12px; }
+  .chat-source-count { display: inline-grid; place-items: center; min-width: 20px; padding: 0 5px; border-radius: 6px; background: var(--paper); font-variant-numeric: tabular-nums; }
+  .chat-source-copy strong { display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-source-provisional { display: block; font-size: 11px; color: var(--muted); line-height: 1.4; margin-top: 4px; }
+  .workspace-chat-board-source > svg { flex-shrink: 0; color: var(--mantine-color-forest-7); }
+  button.workspace-chat-created-task { width: 100%; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .chat-meeting-panel { background: var(--surface); }
+  .chat-meeting-panel-header { border-bottom: 1px solid var(--line); padding: 22px 24px; }
+  .chat-meeting-panel-body { padding: 20px 24px 32px; }
+  .chat-meeting-panel-context { display: grid; gap: 16px; margin-bottom: 24px; }
+  .chat-meeting-full-link { display: inline-flex; align-items: center; gap: 6px; justify-self: end; font-size: 13px; }
+  .chat-meeting-quote { margin: 12px 0; padding: 10px 14px; border-left: 2px solid var(--mantine-color-forest-3); background: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+  .chat-meeting-panel .kanban-grid { grid-template-columns: repeat(4, minmax(220px, 1fr)); overflow-x: auto; padding-bottom: 16px; }
+  .chat-meeting-panel .kanban-grid.content-grid { grid-template-columns: repeat(5, minmax(220px, 1fr)); }
+  .chat-panel-loading { position: fixed; right: 24px; top: 24px; z-index: 200; display: flex; gap: 12px; padding: 16px 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); box-shadow: 0 8px 24px #202e2714; }
+}
+@layer responsive {
+  @media (max-width: 760px) {
+    .workspace-chat-board-source { flex-basis: 100%; }
+    .chat-meeting-panel-header { padding: 16px; }
+    .chat-meeting-panel-body { padding: 16px 12px; }
+  }
+}
+
+.chat-meeting-panel { position: relative; container-type: inline-size; }
+.chat-panel-resize { position: absolute; z-index: 10; inset: 0 auto 0 0; width: 9px; cursor: col-resize; touch-action: none; user-select: none; }
+.chat-panel-resize::after { content: ''; position: absolute; left: 2px; top: 50%; width: 3px; height: 48px; border-radius: 4px; background: var(--mantine-color-forest-3); transition: background .15s; }
+.chat-panel-resize:hover::after, .chat-panel-resize:focus-visible::after { background: var(--mantine-color-forest-7); }
+.chat-panel-resize:focus-visible { outline: 2px solid var(--mantine-color-forest-5); outline-offset: -2px; }
+.chat-meeting-panel .kanban-grid { grid-template-columns: repeat(4, minmax(230px, 1fr)); overflow-x: auto; padding-bottom: 16px; }
+.chat-meeting-panel .kanban-grid.content-grid { grid-template-columns: repeat(5, minmax(230px, 1fr)); }
+@container (max-width: 700px) {
+  .chat-meeting-panel .board-tools { align-items: stretch; }
+  .chat-meeting-panel .board-actions { flex-wrap: wrap; }
+  .chat-meeting-panel .saved-insight-note { grid-template-columns: 36px minmax(0, 1fr); gap: 12px; padding: 16px; }
+}
+@container (max-width: 700px) {
+  .chat-meeting-panel .board-toolbar { flex-wrap: wrap; overflow: visible; }
+  .chat-meeting-panel .board-toolbar .board-grouping,
+  .chat-meeting-panel .board-toolbar .board-search { flex: 1 1 100%; width: 100%; min-width: 0; }
+  .chat-meeting-panel .board-toolbar > button { flex: 1 0 auto; }
+}

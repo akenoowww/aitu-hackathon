@@ -1,3 +1,4 @@
+import { t } from '../i18n'
 import { z } from 'zod'
 import { ApiError, errorMessage, request } from './api'
 
@@ -76,11 +77,11 @@ export const liveApi = {
   transcript: (grant: LiveGrant, offset: number, signal?: AbortSignal) => memberRequest(grant, `/transcript?offset=${offset}`, z.array(utteranceSchema), 'GET', signal),
 }
 export function liveError(error: unknown) {
-  if (error instanceof RoomAccessError) return 'Доступ к комнате истёк. Откройте приглашение и войдите снова.'
-  if (error instanceof ApiError && error.status === 404) return 'Комната или приглашение не найдены.'
-  if (error instanceof ApiError && error.status === 409) return 'Войти сейчас не удалось: встреча завершена или в комнате нет свободных мест.'
-  if (error instanceof ApiError && error.status === 503) return 'Голосовая связь пока недоступна. Попробуйте ещё раз.'
-  return errorMessage(error, 'Не удалось выполнить действие. Попробуйте ещё раз.')
+  if (error instanceof RoomAccessError) return t("Доступ к комнате истёк. Откройте приглашение и войдите снова.")
+  if (error instanceof ApiError && error.status === 404) return t("Комната или приглашение не найдены.")
+  if (error instanceof ApiError && error.status === 409) return t("Войти сейчас не удалось: встреча завершена или в комнате нет свободных мест.")
+  if (error instanceof ApiError && error.status === 503) return t("Голосовая связь пока недоступна. Попробуйте ещё раз.")
+  return errorMessage(error, t("Не удалось выполнить действие. Попробуйте ещё раз."))
 }
 export function formatTime(seconds: number) {
   const value = Math.max(0, Math.floor(seconds))
@@ -113,13 +114,13 @@ export async function captureMicrophone(track: MediaStreamTrack, grant: LiveGran
     worklet.port.onmessage = (event: MessageEvent<ArrayBuffer | string>) => {
       if (event.data instanceof ArrayBuffer && socket.readyState === WebSocket.OPEN) {
         if (socket.bufferedAmount > 128000) {
-          onError('Распознавание не успевает за связью. Переподключите микрофон.')
+          onError(t("Распознавание не успевает за связью. Переподключите микрофон."))
           socket.close()
         } else socket.send(event.data)
       }
     }
-    socket.onclose = () => { if (!stopping) onError('Поток распознавания прервался. Переподключите микрофон.') }
-    socket.onmessage = () => onError('Распознавание перегружено. Переподключите микрофон немного позже.')
+    socket.onclose = () => { if (!stopping) onError(t("Поток распознавания прервался. Переподключите микрофон.")) }
+    socket.onmessage = () => onError(t("Распознавание перегружено. Переподключите микрофон немного позже."))
     await context.resume()
     return async () => {
       if (stopping) return

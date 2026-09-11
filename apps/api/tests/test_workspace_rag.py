@@ -266,3 +266,32 @@ def test_workspace_catalog_rechecked_after_generation(app, authenticated_client,
     rag.generate = change_catalog
     response = client.post("/api/v1/rag/chat", json={"question": "Бюджет?"})
     assert response.status_code == 409
+
+
+@pytest.mark.parametrize("view", ["kanban", "insights", "conversation", None, "foreign"])
+def test_model_panel_action_is_optional_and_scoped(authenticated_client, rag, view):
+    mid = create_meeting(authenticated_client)
+
+    def answer(instructions, context):
+        assert "Do not open a panel merely because a board source was cited" in instructions
+        catalog = json.loads(context)["untrusted_catalog_sources"]
+        source = next(source for source in catalog if source["meeting_id"] == mid)
+        panel = None if view is None else {
+            "meeting_id": str(uuid.uuid4()) if view == "foreign" else mid,
+            "view": "kanban" if view == "foreign" else view,
+        }
+        return GeneratedAnswer.model_validate({
+            "status": "answered",
+            "claims": [{"text": "Meeting found.", "evidence": [
+                {"source_id": source["source_id"], "quote": source["text"]}
+            ]}],
+            "panel": panel,
+        })
+
+    rag.generate = answer
+    response = authenticated_client.post("/api/v1/rag/chat", json={"question": "Покажи канбан"})
+    assert response.status_code == 200, response.text
+    assert response.json()["answer"] == "Meeting found."
+    assert response.json()["panel"] == (
+        None if view in {None, "foreign"} else {"meeting_id": mid, "view": view}
+    )

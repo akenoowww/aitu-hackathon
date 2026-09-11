@@ -1,3 +1,4 @@
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -11,6 +12,7 @@ from starlette.middleware.cors import CORSMiddleware
 from aimeet_api.core.config import Settings
 from aimeet_api.core.dependencies import DatabaseDep
 from aimeet_api.core.middleware import RequestBoundaryMiddleware
+from aimeet_api.core.middleware import logger as request_logger
 from aimeet_api.core.schemas import ErrorResponse
 from aimeet_api.db.session import create_engine_and_session
 from aimeet_api.modules.auth.router import router as auth_router
@@ -58,7 +60,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
     application.add_middleware(
-        RequestBoundaryMiddleware, max_request_bytes=config.max_request_bytes,
+        RequestBoundaryMiddleware,
+        max_request_bytes=config.max_request_bytes,
         max_audio_bytes=config.max_audio_bytes,
     )
 
@@ -94,9 +97,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @application.exception_handler(RagError)
     async def rag_error(request: Request, exc: RagError):
+        request_logger.warning(
+            json.dumps(
+                {
+                    "event": "rag_error",
+                    "request_id": request.state.request_id,
+                    "code": exc.code,
+                    "status": exc.status_code,
+                }
+            )
+        )
         return JSONResponse(
-            {"error": {"code": exc.code, "message": exc.code},
-             "request_id": request.state.request_id},
+            {
+                "error": {"code": exc.code, "message": exc.code},
+                "request_id": request.state.request_id,
+            },
             status_code=exc.status_code,
         )
 

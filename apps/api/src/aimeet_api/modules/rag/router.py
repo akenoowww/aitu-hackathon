@@ -1,12 +1,13 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.modules.meetings.repository import MeetingRepository
-from aimeet_api.modules.rag.assistant import decide_reply
+from aimeet_api.modules.rag.assistant import decide_reply, stream_reply
 from aimeet_api.modules.rag.assistant_tasks import create_tasks
 from aimeet_api.modules.rag.chunking import embedding_profile, source_hash
 from aimeet_api.modules.rag.conversations import (
@@ -43,7 +44,8 @@ from aimeet_api.modules.rag.schemas import (
     WorkspaceCoverage,
 )
 from aimeet_api.modules.rag.service import answer_question
-from aimeet_api.modules.rag.workspace import answer_workspace, workspace_scope
+from aimeet_api.modules.rag.streaming import event_stream
+from aimeet_api.modules.rag.workspace import answer_workspace, workspace_events, workspace_scope
 
 router = APIRouter(tags=["RAG"])
 
@@ -131,6 +133,49 @@ def conversation_start_turn(
     conversation_id: uuid.UUID, payload: ConversationTurnStart, user: CurrentUser, db: DatabaseDep
 ):
     return start_turn(db, user, conversation_id, payload)
+
+
+@router.post(
+    "/assistant/chat/stream",
+    dependencies=[Depends(require_csrf)],
+    operation_id="streamAssistantChat",
+)
+def assistant_chat_stream(
+    payload: AssistantQuestion,
+    request: Request,
+    user: CurrentUser,
+    db: DatabaseDep,
+    providers: ProviderDep,
+):
+    db.rollback()
+    return StreamingResponse(
+        event_stream(stream_reply(payload, providers), request.state.request_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/rag/chat/stream", dependencies=[Depends(require_csrf)], operation_id="streamWorkspaceChat"
+)
+def workspace_chat_stream(
+    payload: Question,
+    request: Request,
+    user: CurrentUser,
+    db: DatabaseDep,
+    settings: SettingsDep,
+    providers: ProviderDep,
+):
+    workspace_id = user.workspace_id
+    db.rollback()
+    return StreamingResponse(
+        event_stream(
+            workspace_events(db, workspace_id, payload.question, settings, providers),
+            request.state.request_id,
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
 
 
 def get_meeting(db, user, meeting_id):

@@ -2,11 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
-import { MantineProvider } from '@mantine/core'
+import { LocalizedProvider } from './components/localized-provider'
 import { setNonce } from 'get-nonce'
 import { router } from './app'
 import { queryClient } from './lib/query'
-import { cssVariablesResolver, theme } from './theme'
 import './styles.css'
 
 // The edge supplies a fresh nonce for Mantine variables and scroll-lock styles.
@@ -18,8 +17,8 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Application root is missing')
 ReactDOM.createRoot(root).render(
   <React.StrictMode>
-    <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} forceColorScheme="light" getStyleNonce={() => nonce && nonce !== '__AIMEET_CSP_NONCE__' ? nonce : ''}>
+    <LocalizedProvider nonce={nonce && nonce !== '__AIMEET_CSP_NONCE__' ? nonce : ''}>
       <QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider>
-    </MantineProvider>
+    </LocalizedProvider>
   </React.StrictMode>,
 )

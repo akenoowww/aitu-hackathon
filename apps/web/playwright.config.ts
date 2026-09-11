@@ -14,6 +14,8 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:8787',
     channel: process.env.PLAYWRIGHT_CHANNEL,
+    // Keep the existing Russian-language assertions independent of browser defaults.
+    locale: 'ru-RU',
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
     // Authenticated traces can contain login payloads and session cookies.

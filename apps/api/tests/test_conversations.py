@@ -142,7 +142,13 @@ def test_pending_creation_stage_survives_failure_and_resume(authenticated_client
     failed = client.post(path, json={**payload, "state": "failed"})
     assert failed.json()["result"]["mode"] == "failed"
     resumed = client.post(path, json={**payload, "activity": "thinking"})
-    assert resumed.json()["result"] == {"mode": "pending", "answer": "", "activity": "creating"}
+    assert resumed.json()["result"] == {
+        "mode": "pending",
+        "answer": "",
+        "activity": "creating",
+        "error_code": None,
+        "error_status": None,
+    }
     other = create(client)
     assert (
         client.post(
@@ -150,3 +156,23 @@ def test_pending_creation_stage_survives_failure_and_resume(authenticated_client
         ).status_code
         == 409
     )
+
+
+def test_failure_reason_survives_reload_and_clears_on_retry(authenticated_client):
+    client = authenticated_client
+    cid = create(client)
+    payload = {
+        "id": str(uuid.uuid4()),
+        "question": "Какие задачи?",
+        "state": "failed",
+        "error_code": "MODEL_OUTPUT_LIMIT",
+        "error_status": 502,
+    }
+    path = f"/api/v1/assistant/conversations/{cid}/turns/pending"
+    assert client.post(path, json=payload).status_code == 200
+    result = client.get(f"/api/v1/assistant/conversations/{cid}").json()["turns"][0]["result"]
+    assert result["error_code"] == "MODEL_OUTPUT_LIMIT"
+    assert result["error_status"] == 502
+    retry = client.post(path, json={**payload, "state": "pending"}).json()["result"]
+    assert retry["error_code"] is None
+    assert retry["error_status"] is None
