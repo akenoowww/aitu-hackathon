@@ -1,5 +1,31 @@
 import { randomUUID } from 'node:crypto';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Route } from '@playwright/test';
+
+function conversationStore() {
+  const chats = new Map<string, { id: string; title: string; created_at: string; updated_at: string; turns: Array<Record<string, unknown>> }>();
+  return async (route: Route) => {
+    const parts = new URL(route.request().url()).pathname.split('/').filter(Boolean);
+    const id = parts[4];
+    if (!id && route.request().method() === 'GET') return route.fulfill({ json: [...chats.values()] });
+    if (!id) {
+      const value = route.request().postDataJSON();
+      const chat = { id: value.id, title: 'Новый чат', created_at: new Date().toISOString(), updated_at: new Date().toISOString(), turns: [] };
+      chats.set(chat.id, chat);
+      return route.fulfill({ json: chat });
+    }
+    const chat = chats.get(id)!;
+    if (parts[5] === 'turns') {
+      const data = route.request().postDataJSON();
+      const existing = chat.turns.find((t) => t.id === data.id);
+      if (existing) return route.fulfill({ json: existing });
+      const saved = { ...data, created_at: new Date().toISOString() };
+      chat.turns.push(saved);
+      if (chat.title === 'Новый чат') chat.title = data.question;
+      return route.fulfill({ json: saved });
+    }
+    return route.fulfill({ json: chat });
+  };
+}
 
 async function expectNoHorizontalOverflow(page: Page) {
   await expect
@@ -214,8 +240,10 @@ test('workspace chat searches existing meetings without manual preparation', asy
   let ready = false;
   const coverage = () => ({ total: 1, ready: ready ? 1 : 0, pending: !ready && indexRequests ? 1 : 0,
     failed: 0, not_indexed: !ready && !indexRequests ? 1 : 0, unavailable: 0 });
+  const chatStore = conversationStore();
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
     const method = route.request().method();
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: userId, email: 'qa@example.com', display_name: 'QA' } });
     if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'low', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
@@ -281,7 +309,7 @@ test('workspace chat searches existing meetings without manual preparation', asy
   const header = await page.locator('.workspace-chat-header').boundingBox();
   const conversation = await page.locator('.workspace-chat-conversation').boundingBox();
   const composer = await page.locator('.workspace-chat-composer-wrap').boundingBox();
-  expect(header!.x).toBeLessThan(320);
+  expect(header!.x).toBeLessThan(600);
   expect(Math.abs(header!.x - conversation!.x)).toBeLessThan(2);
   expect(Math.abs(header!.x - composer!.x)).toBeLessThan(2);
   await page.screenshot({ path: testInfo.outputPath('chat-answer-desktop.png'), fullPage: true });
@@ -424,8 +452,10 @@ test('new conversation starts with an automatic title and Russian language', asy
 
 test('assistant chats with history and helps without touching meeting search', async ({ page }) => {
   let messages = 0;
+  const chatStore = conversationStore();
   await page.route('**/api/v1/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
     if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: randomUUID(), email: 'qa@example.com', display_name: 'QA' } });
     if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: false, llm_provider: 'openai', llm_model: 'gpt-5.6-luna', reasoning_effort: 'max', embedding_provider: 'openai', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: true } });
     if (path === '/api/v1/assistant/chat') {
@@ -460,7 +490,7 @@ test('assistant chats with history and helps without touching meeting search', a
   await input.fill('Как загрузить запись?');
   await send.click();
   await expect(page.getByText('Откройте «Встречи» и нажмите «Загрузить аудио».', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Новый диалог' }).click();
+  await page.getByRole('button', { name: 'Новый чат', exact: true }).click();
   await input.fill('Привет');
   await send.click();
   await expect(page.getByText('Привет, Алия! Чем помочь?', { exact: true })).toBeVisible();
@@ -552,12 +582,18 @@ for (const sourceType of ['text', 'audio'] as const) {
 
     await page.getByRole('tab', { name: 'Итоги', exact: true }).click();
     await expect(page).toHaveURL(/view=insights/);
-    await expect(page.getByText('Участники согласовали запуск пилота.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Подготовить смету', { exact: true })).toBeVisible();
     await expect(page.getByTestId('transcript')).toHaveCount(0);
     await expect(page.locator('.kanban-grid')).toHaveCount(0);
+    await expect(page.locator('.saved-insight-note blockquote')).toHaveText(card.quote);
+    await page.locator('.saved-insight-note').getByRole('button', { name: 'Открыть фрагмент', exact: true }).click();
+    const sourceDialog = page.getByRole('dialog', { name: 'Источник из встречи' });
+    await expect(sourceDialog.locator('mark')).toHaveText(card.quote);
+    await page.getByRole('button', { name: 'Закрыть источник' }).click();
     await page.screenshot({ path: testInfo.outputPath('meeting-insights.png'), fullPage: true });
-    await page.locator('.meeting-summary').getByRole('button', { name: 'К разговору' }).click();
+    await page.locator('.saved-insight-note').getByRole('button', { name: 'К разговору' }).click();
     await expect(page.getByTestId('transcript')).toBeFocused();
+    await expect(page.getByTestId('transcript').locator('mark')).toHaveText(card.quote);
 
     await page.getByRole('tab', { name: 'Канбан', exact: true }).click();
     await expect(page).toHaveURL(/view=kanban/);
@@ -594,3 +630,222 @@ for (const sourceType of ['text', 'audio'] as const) {
     expect(errors).toEqual([]);
   });
 }
+
+test('saved live outcomes appear in insights and kanban even without tasks', async ({ page }, testInfo) => {
+  const mid = '99999999-9999-4999-8999-999999999999';
+  const quote = 'Почему не появляется текст разговора?';
+  const card = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', kind: 'question', title: 'Выяснить причину отсутствия текста', description: '', assignee: null, due_date: null, due_text: null, priority: 'unspecified', status: 'todo', reviewed: false, quote, quote_start: 0, start_char: 0, end_char: quote.length, agreement: 'unclear', origin: 'ai', revisions: [], clarifications: [], evidence: null };
+  await page.route('**/api/v1/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: mid, display_name: 'Проверка', email: 'qa@example.com' } });
+    if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Сохранённый разговор', language: 'ru', source_type: 'text', status: 'transcribed', transcript: quote, transcript_length: quote.length, segments: null, audio_filename: null, audio_bytes: null, transcription: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
+    if (path.endsWith('/board')) return route.fulfill({ json: { status: 'ready', version: 1, progress: 100, error_code: null, cards: [card], summary: [{ text: 'Обсудили отображение стенограммы.', quote }] } });
+    return route.abort();
+  });
+  await page.goto(`/meetings/${mid}?view=insights`);
+  await expect(page.getByText('Кратко о встрече', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Обсудили отображение стенограммы.', { exact: true })).toHaveCount(0);
+  await expect(page.getByText(card.title, { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Подготовить итоги', exact: true })).toHaveCount(0);
+  await expect(page.getByText('Задать вопрос по встрече', { exact: true })).toHaveCount(0);
+  await page.getByRole('tab', { name: 'Канбан', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Группировка карточек' })).toHaveValue('По содержанию встречи');
+  await expect(page.getByRole('button', { name: card.title, exact: true })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('saved-live-kanban.png'), fullPage: true, animations: 'disabled' });
+});
+
+test('assistant cites outcomes and shows real task creation progress with safe retry', async ({ page }, testInfo) => {
+  const meetingId = randomUUID();
+  const cardId = randomUUID();
+  let createPlans = 0;
+  let writes = 0;
+  let operationId: string | undefined;
+  let finishFirstWrite: (() => void) | undefined;
+  const coverage = { total: 1, ready: 1, pending: 0, failed: 0, not_indexed: 0, unavailable: 0 };
+  const chatStore = conversationStore();
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.startsWith('/api/v1/assistant/conversations')) return chatStore(route);
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: '11111111-1111-4111-8111-111111111111', email: 'qa@example.com', display_name: 'QA' } });
+    if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'max', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
+    if (path === '/api/v1/assistant/chat') {
+      const create = route.request().postDataJSON().question.startsWith('Добавь');
+      if (create) createPlans++;
+      return route.fulfill({ json: { action: create ? 'create_tasks' : 'search_meetings', answer: '', search_query: create ? '' : 'Текущие задачи' } });
+    }
+    if (path === '/api/v1/rag/index') return route.fulfill({ json: coverage });
+    if (path === '/api/v1/rag/chat') return route.fulfill({ json: {
+      status: 'answered', answer: 'Фронтенд — в работе.', coverage, sources: [], catalog_sources: [],
+      board_coverage: { available_sources: 2, selected_sources: 2 },
+      board_sources: [
+        { source_id: 'B1', kind: 'kanban', meeting_id: meetingId, meeting_title: 'Планирование', card_id: cardId, title: 'Разработать фронтенд', text: 'Статус: В работе', board_version: 1, provisional: false, transcript_current: true, transcript_quote: null },
+        { source_id: 'B2', kind: 'summary', meeting_id: meetingId, meeting_title: 'Планирование', card_id: null, title: 'Итоги встречи', text: 'Цель — запустить пилот.', board_version: 1, provisional: false, transcript_current: true, transcript_quote: null },
+      ],
+      claims: [{ text: 'Фронтенд — в работе.', citations: [{ kind: 'board', source_id: 'B1', quote: 'Статус: В работе' }] },
+        { text: 'Цель — запустить пилот.', citations: [{ kind: 'board', source_id: 'B2', quote: 'Цель — запустить пилот.' }] }],
+    } });
+    if (path === '/api/v1/assistant/tasks') {
+      writes++;
+      const body = route.request().postDataJSON();
+      if (writes === 1) {
+        operationId = body.request_id;
+        await new Promise<void>((resolve) => { finishFirstWrite = resolve });
+        return route.abort(); // Simulate a saved operation whose response was lost.
+      }
+      expect(body.request_id).toBe(operationId);
+      return route.fulfill({ json: { status: 'created', answer: 'Добавлено задач в канбан: 1.', tasks: [{
+        meeting_id: meetingId, meeting_title: 'Планирование', card_id: randomUUID(), board_version: 2,
+        title: 'Проверить фронтенд', description: '', assignee: 'Алия', due_date: null, due_text: 'к пятнице',
+      }] } });
+    }
+    throw new Error(`Unexpected request ${path}`);
+  });
+  await page.goto('/chat');
+  const input = page.getByRole('textbox', { name: 'Сообщение ассистенту' });
+  const send = page.getByRole('button', { name: 'Отправить вопрос' });
+  await input.fill('Какие сейчас задачи?');
+  await send.click();
+  await expect(page.getByText('Фронтенд — в работе.', { exact: true })).toBeVisible();
+  await page.getByText('Канбан · Планирование', { exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Открыть канбан' })).toHaveAttribute('href', new RegExp(`/meetings/${meetingId}\\?view=kanban`));
+  await page.getByText('Итоги · Планирование', { exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Открыть итоги' })).toHaveAttribute('href', new RegExp(`/meetings/${meetingId}\\?view=insights`));
+  await input.fill('Добавь задачу проверить фронтенд');
+  await send.click();
+  await expect(page.getByRole('status')).toContainText('Создаю задачи в канбане');
+  await expect(page.locator('.workspace-chat-created-task')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('assistant-creating.png'), fullPage: true });
+  finishFirstWrite!();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(input).toHaveValue('Добавь задачу проверить фронтенд');
+  await send.click();
+  await expect(page.getByText('Добавлено задач в канбан: 1.', { exact: true })).toBeVisible();
+  await expect(page.locator('.workspace-chat-created-task')).toContainText('Проверить фронтенд');
+  await expect(page.locator('.workspace-chat-created-task')).toHaveAttribute('href', new RegExp(`/meetings/${meetingId}\\?view=kanban`));
+  expect(createPlans).toBe(1);
+  expect(writes).toBe(2);
+  await page.screenshot({ path: testInfo.outputPath('assistant-created.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+});
+
+test('kanban drag and drop saves status and category, cancels and rolls back failures', async ({ page }, testInfo) => {
+  const mid = '77777777-7777-4777-8777-777777777777';
+  const makeCard = (id: string, kind: string, title: string) => ({ id, kind, title, description: '', assignee: 'Алия', due_date: null, due_text: null, priority: 'unspecified', status: 'todo', reviewed: false, quote: 'Алия: обсудим запуск.', quote_start: 0, agreement: 'unclear', origin: 'manual', start_char: 0, end_char: 20, evidence: null, revisions: [], clarifications: [] });
+  let cards = [makeCard('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'task', 'Проверить смету'), makeCard('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'topic', 'Обсудить запуск')];
+  let version = 1;
+  let failSave = false;
+  const writes: Array<Record<string, unknown>> = [];
+  const board = () => ({ version, status: 'ready', progress: 100, error_code: null, cards, summary: [] });
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/auth/me')) return route.fulfill({ json: { id: mid, email: 'qa@example.test', display_name: 'Тест DnD' } });
+    if (path === `/api/v1/meetings/${mid}`) return route.fulfill({ json: { id: mid, title: 'Тест канбана', language: 'ru', source_type: 'text', status: 'transcribed', transcript: 'Алия: обсудим запуск.', transcript_length: 20, segments: null, transcription: null, audio_filename: null, audio_bytes: null, created_at: '2026-09-11T09:00:00Z', updated_at: '2026-09-11T09:00:00Z' } });
+    if (path.endsWith('/board')) return route.fulfill({ json: board() });
+    if (path.includes('/board/cards/')) {
+      const payload = route.request().postDataJSON() as Record<string, unknown>;
+      writes.push(payload);
+      if (failSave) return route.fulfill({ status: 503, json: { error: { code: 'TEST_UNAVAILABLE' } } });
+      expect(payload.version).toBe(version);
+      const id = path.split('/').at(-1);
+      cards = cards.map((card) => card.id === id ? { ...card, ...payload } : card);
+      version++;
+      return route.fulfill({ json: board() });
+    }
+    return route.fulfill({ status: 404, json: {} });
+  });
+  await page.goto(`/meetings/${mid}?view=kanban`);
+  const handle = (title: string) => page.getByRole('button', { name: `Переместить: ${title}`, exact: true });
+  async function drag(title: string, target: string, end = true) {
+    const origin = handle(title);
+    await origin.scrollIntoViewIfNeeded();
+    const from = (await origin.boundingBox())!;
+    const to = (await page.getByRole('region', { name: target, exact: true }).boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2, { steps: 3 });
+    await expect(page.locator('.kanban-drag-preview')).toBeVisible();
+    await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 15 });
+    await expect(page.getByRole('region', { name: target, exact: true })).toHaveClass(/drop-target/);
+    if (end) await page.mouse.up();
+  }
+  await expect(handle('Проверить смету')).toBeVisible();
+  const tops = await page.locator('.board-toolbar').evaluate((el) => Array.from(el.children).filter((node) => node.getBoundingClientRect().height > 0).map((node) => node.getBoundingClientRect().top));
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path: testInfo.outputPath('compact-toolbar.png'), fullPage: true });
+
+  await drag('Проверить смету', 'В работе', false);
+  await page.screenshot({ path: testInfo.outputPath('drag-preview.png'), fullPage: true });
+  await page.mouse.up();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0]).toMatchObject({ kind: 'task', status: 'doing', quote: cards[0].quote, assignee: 'Алия' });
+  await page.reload();
+  await expect(page.getByRole('region', { name: 'В работе', exact: true }).getByRole('button', { name: 'Проверить смету', exact: true })).toBeVisible();
+
+  await handle('Проверить смету').focus();
+  await page.keyboard.press('Space');
+  await expect(page.locator('.kanban-drag-preview')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('region', { name: 'Заблокировано', exact: true })).toHaveClass(/drop-target/);
+  await page.keyboard.press('Space');
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes[1].status).toBe('blocked');
+  await expect(page.locator('.kanban-drag-preview')).toHaveCount(0);
+  await expect(handle('Проверить смету')).toBeFocused();
+
+  await drag('Проверить смету', 'Готово', false);
+  await page.keyboard.press('Escape'); await page.mouse.up();
+  await expect(page.locator('.kanban-drag-preview')).toHaveCount(0);
+  expect(writes.length).toBe(2);
+  await drag('Проверить смету', 'Готово', false);
+  await page.mouse.move(20, 20, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('.kanban-drag-preview')).toHaveCount(0);
+  expect(writes.length).toBe(2);
+  failSave = true;
+  await drag('Проверить смету', 'Готово');
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Заблокировано', exact: true }).getByRole('button', { name: 'Проверить смету', exact: true })).toBeVisible();
+  expect(cards[0].status).toBe('blocked');
+  failSave = false;
+
+  await page.getByRole('combobox', { name: 'Группировка карточек', exact: true }).click();
+  await page.getByRole('option', { name: 'По содержанию встречи', exact: true }).click();
+  await drag('Обсудить запуск', 'Решения');
+  await expect.poll(() => writes.length).toBe(4);
+  expect(writes[3]).toMatchObject({ kind: 'decision', status: 'todo', quote: 'Алия: обсудим запуск.' });
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Группировка карточек', exact: true }).click();
+  await page.getByRole('option', { name: 'По содержанию встречи', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Решения', exact: true }).getByRole('button', { name: 'Обсудить запуск', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Фильтры', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Ответственный', exact: true }).click();
+  await page.getByRole('option', { name: 'Алия', exact: true }).click();
+  await expect(page.getByRole('combobox', { name: 'Ответственный', exact: true })).toHaveValue('Алия');
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: testInfo.outputPath('compact-toolbar-mobile.png'), fullPage: true });
+  // Touch input goes through Chrome's input pipeline and the same pointer sensor.
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole('combobox', { name: 'Группировка карточек', exact: true }).click();
+  await page.getByRole('option', { name: 'По статусам поручений', exact: true }).click();
+  await handle('Проверить смету').scrollIntoViewIfNeeded();
+  const fromTouch = (await handle('Проверить смету').boundingBox())!;
+  const toTouch = (await page.getByRole('region', { name: 'Готово', exact: true }).boundingBox())!;
+  const cdp = await page.context().newCDPSession(page);
+  const x = fromTouch.x + fromTouch.width / 2, y = fromTouch.y + fromTouch.height / 2;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 12, y }] });
+  await expect(page.locator('.kanban-drag-preview')).toBeVisible();
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: toTouch.x + toTouch.width / 2, y: toTouch.y + 80 }] });
+  await expect(page.getByRole('region', { name: 'Готово', exact: true })).toHaveClass(/drop-target/);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(() => writes.length).toBe(5);
+  expect(writes[4].status).toBe('done');
+  await cdp.detach();
+  expect(errors).toEqual([]);
+});

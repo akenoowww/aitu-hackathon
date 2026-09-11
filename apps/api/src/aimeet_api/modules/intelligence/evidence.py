@@ -25,10 +25,18 @@ class EvidenceIndex:
         self.segments = []
         # The STT engine joins these exact strings with newlines. If alignment is
         # lost, keep the citation textual instead of inventing a timestamp.
-        if segments and "\n".join(s["text"] for s in segments) == transcript:
+        lines = [s["text"] for s in segments] if segments else []
+        if segments and "\n".join(lines) != transcript:
+            # Archived live meetings retain explicit timestamps before each speaker.
+            # Accept only an exact reconstruction, just as for plain STT segments.
+            lines = [
+                f"[{int(s['start']) // 60:02}:{int(s['start']) % 60:02}] {s['text']}"
+                for s in segments
+            ]
+        if segments and "\n".join(lines) == transcript:
             position = 0
-            for segment in segments:
-                end = position + len(segment["text"])
+            for segment, line in zip(segments, lines, strict=True):
+                end = position + len(line)
                 self.segments.append((position, end, segment))
                 position = end + 1
 

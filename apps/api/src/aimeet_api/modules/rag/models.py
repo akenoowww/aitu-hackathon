@@ -99,3 +99,40 @@ class RagEdge(Base):
     source_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     target_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     relation: Mapped[str] = mapped_column(String(8), primary_key=True)
+
+
+class AssistantTaskOperation(Base):
+    __tablename__ = "assistant_task_operations"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id", ondelete="CASCADE"))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AssistantConversation(Base):
+    __tablename__ = "assistant_conversations"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(100), default="Новый чат")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AssistantConversationTurn(Base):
+    __tablename__ = "assistant_conversation_turns"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("assistant_conversations.id", ondelete="CASCADE"), index=True
+    )
+    question: Mapped[str] = mapped_column(Text)
+    result: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

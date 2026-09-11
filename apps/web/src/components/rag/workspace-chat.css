@@ -1,6 +1,15 @@
 @layer layout {
+  .workspace-chats { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 28px; }
+  .assistant-conversations { min-width: 0; border-right: 1px solid var(--line); padding-right: 16px; }
+  .assistant-conversations > .mantine-Button-root { width: 100%; }
+  .assistant-conversations nav { display: grid; gap: 6px; margin-top: 16px; max-height: calc(100svh - 140px); overflow-y: auto; }
+  .assistant-conversations nav button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 12px 10px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+  .assistant-conversations nav button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .assistant-conversations nav button.is-active { background: var(--mantine-color-forest-0); color: var(--mantine-color-forest-8); }
+  .assistant-conversations nav button:disabled { cursor: wait; }
+
   .workspace-chat { max-width: none; margin-inline: 0; min-height: calc(100svh - 122px); display: flex; flex-direction: column; gap: 24px; }
-  .workspace-chat-header { max-width: 1100px; margin-bottom: 0; }
+  .workspace-chat-header { margin-bottom: 0; }
   .workspace-chat-header .page-heading h1 { font-size: 30px; line-height: 1.2; }
   .workspace-chat-subtitle { margin-top: 6px; color: var(--muted); font-size: 14px; }
   .workspace-chat-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 48px 0 64px; }
@@ -21,7 +30,7 @@
   .workspace-chat-coverage { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); font-size: 14px; }
   .workspace-chat-coverage p { margin-top: 5px; line-height: 1.5; color: var(--muted); }
   .workspace-chat-coverage .mantine-Button-root { flex-shrink: 0; }
-  .workspace-chat-conversation { width: 100%; max-width: 1100px; margin: 20px 0; }
+  .workspace-chat-conversation { width: 100%; margin: 20px 0; }
   .workspace-chat-turn + .workspace-chat-turn { margin-top: 44px; }
   .workspace-chat-question { max-width: 85%; width: fit-content; margin: 0 0 28px auto; padding: 16px 22px; background: var(--mantine-color-forest-0); border-radius: 20px 20px 4px 20px; font-size: 16px; line-height: 1.55; font-weight: 500; overflow-wrap: anywhere; white-space: pre-wrap; }
   .workspace-chat-speaker { display: flex; align-items: center; gap: 8px; font-weight: 600; color: var(--mantine-color-forest-8); margin-bottom: 16px; }
@@ -38,6 +47,15 @@
   .workspace-chat-source blockquote { border-left: 2px solid var(--mantine-color-forest-3); margin: 0 16px 12px; padding: 4px 16px; white-space: pre-wrap; }
   .workspace-chat-source a { display: inline-flex; align-items: center; gap: 8px; margin: 0 16px 14px; }
   .workspace-chat-answer > .workspace-chat-note { text-align: left; margin-top: 14px; }
+  .workspace-chat-operation { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+  .workspace-chat-operation p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .workspace-chat-operation.is-complete { color: var(--mantine-color-forest-8); background: var(--mantine-color-forest-0); }
+  .workspace-chat-created-tasks { display: grid; gap: 10px; margin-top: 12px; }
+  .workspace-chat-created-task { display: flex; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; }
+  .workspace-chat-created-task:hover { background: var(--paper); }
+  .workspace-chat-created-task > div { flex: 1; min-width: 0; }
+  .workspace-chat-created-task strong, .workspace-chat-created-task span { display: block; }
+  .workspace-chat-created-task span { font-size: 13px; color: var(--muted); margin-top: 3px; }
   .workspace-chat-thinking { display: flex; align-items: center; gap: 12px; color: var(--muted); padding: 12px 0; }
 }
 @layer responsive {
@@ -67,5 +85,19 @@
     .workspace-chat-header .mantine-Button-root { padding-inline: 8px; font-size: 13px; }
     .workspace-chat-source summary { flex-wrap: wrap; }
     .workspace-chat-source-hint { display: none; }
+  }
+}
+
+@layer responsive {
+  @media (max-width: 1000px) {
+    .workspace-chats { grid-template-columns: 150px minmax(0, 1fr); gap: 18px; }
+  }
+  @media (max-width: 760px) {
+    .workspace-chats { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+    .assistant-conversations { border-right: 0; border-bottom: 1px solid var(--line); padding: 0 0 12px; }
+    .assistant-conversations > .mantine-Button-root { width: auto; }
+    .assistant-conversations nav { display: flex; overflow-x: auto; margin-top: 10px; max-height: 70px; }
+    .assistant-conversations nav button { flex: 0 0 auto; max-width: 200px; }
+    .workspace-chats .workspace-chat { min-height: calc(100svh - 180px); }
   }
 }

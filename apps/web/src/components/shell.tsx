@@ -1,4 +1,4 @@
-import { Link, Navigate, Outlet, useRouterState } from '@tanstack/react-router'
+import { Link, Navigate, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
 import { useMediaQuery } from '@mantine/hooks'
@@ -18,6 +18,7 @@ export function WorkspaceShell() {
 }
 
 export function WorkspaceFrame({ children }: { children: ReactNode }) {
+  const navigate = useNavigate()
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const session = useQuery(sessionQuery)
   const mobile = useMediaQuery('(max-width: 760px)')
@@ -35,7 +36,11 @@ export function WorkspaceFrame({ children }: { children: ReactNode }) {
   }
   const logout = useMutation({
     mutationFn: api.logout,
-    onSuccess: () => { queryClient.clear(); queryClient.setQueryData(['session'], null) },
+    onSuccess: () => {
+      queryClient.clear()
+      queryClient.setQueryData(['session'], null)
+      void navigate({ to: '/login', replace: true })
+    },
   })
   return <div className={`app-shell workspace-frame ${collapsed ? 'sidebar-collapsed' : ''} ${mobileExpanded ? 'sidebar-mobile-expanded' : ''} ${/^\/live\/[^/]+/.test(pathname) ? 'workspace-live-room' : ''} ${/^\/live\/?$/.test(pathname) ? 'workspace-live-entry' : ''} ${pathname.startsWith('/meetings') ? 'workspace-meetings' : ''}`}>
     <Anchor className="skip-link" href="#main-content">К содержимому</Anchor>

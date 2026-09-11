@@ -1,14 +1,15 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Anchor, Button, Group, Progress, Stack, Tabs, Text, Title } from '@mantine/core'
 import { ArrowRight, AudioLines, Check, CheckSquare, CircleHelp, Lightbulb, ListChecks, Sparkles, TriangleAlert } from 'lucide-react'
 import type { MeetingDetail } from '../lib/contracts'
-import { boardApi, boardError, type Card } from '../lib/board'
+import { boardApi, boardError, type Evidence } from '../lib/board'
+import { resolveMeetingEvidence, transcriptSegmentRanges } from '../lib/meeting-evidence'
 import { timestamp } from '../lib/transcription'
 import { Transcription } from './transcription'
 import { MeetingBoard } from './board/meeting-board'
-import { MeetingChat } from './rag/meeting-chat'
-import { Disclosure, InlineError } from './ui'
+import { MeetingEvidence } from './board/meeting-evidence'
+import { InlineError } from './ui'
 import './live/live.css'
 import './audio-workspace.css'
 import './meeting-workspace.css'
@@ -28,9 +29,12 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
   const cache = useQueryClient()
   const pane = useRef<HTMLDivElement>(null)
   const audio = useRef<HTMLAudioElement>(null)
+  const pendingSeek = useRef<number | null>(null)
+  const [focusedSource, setFocusedSource] = useState<Evidence | null>(null)
+  const [openedSource, setOpenedSource] = useState<Evidence | null>(null)
   const following = useRef(true)
   const savedScroll = useRef<Record<MeetingView, number>>({ conversation: 0, insights: 0, kanban: 0 })
-  const quoteTarget = useRef<{ quote: string; start?: number } | null>(null)
+  const quoteTarget = useRef<{ quote: string; evidence: Evidence | null } | null>(null)
   const isAudio = meeting.source_type === 'audio'
   const processing = ['queued', 'running'].includes(meeting.transcription?.status ?? '')
   const recognized = isAudio ? meeting.status === 'transcribed' : !!meeting.transcript.trim()
@@ -41,6 +45,7 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
   const analyzing = ['queued', 'running'].includes(board.data?.status ?? '')
   const complete = recognized && board.data?.status === 'ready'
   const segments = meeting.segments ?? []
+  const ranges = useMemo(() => transcriptSegmentRanges(meeting), [meeting])
   const processedSeconds = segments.at(-1)?.end ?? 0
   const duration = meeting.transcription?.duration_seconds
   const notes = board.data?.cards.filter((card) => card.status !== 'dismissed') ?? []
@@ -49,8 +54,9 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
     if (pane.current) savedScroll.current[view] = pane.current.scrollTop
     onViewChange(next)
   }
-  function source(quote: string, start?: number) {
-    quoteTarget.current = { quote, start }
+  function source(quote: string, evidence: Evidence | null) {
+    quoteTarget.current = { quote, evidence }
+    setFocusedSource(evidence)
     changeView('conversation')
   }
   useEffect(() => {
@@ -61,9 +67,13 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
     if (view !== 'conversation' || !target) return
     quoteTarget.current = null
     const rows = Array.from(element.querySelectorAll<HTMLElement>('[data-transcript-segment]'))
-    const row = rows.find((node) => target.start !== undefined
-      ? Number(node.dataset.start) <= target.start && Number(node.dataset.end) >= target.start
-      : node.textContent?.includes(target.quote))
+    const reference = target.evidence
+    const matches = rows.filter((node) => reference && node.dataset.startChar !== undefined
+      ? Number(node.dataset.startChar) < reference.end_char && Number(node.dataset.endChar) > reference.start_char
+      : reference?.start_seconds !== null && reference?.start_seconds !== undefined
+        ? Number(node.dataset.start) <= reference.start_seconds && Number(node.dataset.end) > reference.start_seconds
+        : node.textContent?.includes(target.quote))
+    const row = reference ? matches[0] : matches.length === 1 ? matches[0] : undefined
     if (row) {
       row.scrollIntoView({ block: 'center', behavior: 'instant' })
       row.focus({ preventScroll: true })
@@ -72,14 +82,14 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
       raw?.scrollIntoView({ block: 'start', behavior: 'instant' })
       raw?.focus({ preventScroll: true })
     }
-    if (target.start !== undefined && audio.current) audio.current.currentTime = target.start
-  }, [view])
+    if (reference?.start_seconds !== null && reference?.start_seconds !== undefined && audio.current) {
+      if (audio.current.readyState >= 1) audio.current.currentTime = reference.start_seconds
+      else { pendingSeek.current = reference.start_seconds; audio.current.load() }
+    }
+  }, [view, focusedSource])
   useEffect(() => {
     if (processing && following.current && pane.current && view === 'conversation') pane.current.scrollTop = pane.current.scrollHeight
   }, [processing, segments.length, view])
-  function noteSource(card: Card) {
-    if (card.quote) source(card.quote, card.evidence?.start_seconds ?? undefined)
-  }
 
   return <section className="meeting-workspace" aria-label="Рабочее пространство встречи">
     {isAudio && (processing || analyzing || !recognized) && <div className="meeting-processing no-print">
@@ -102,11 +112,12 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
       <div className={`live-focus-pane saved-meeting-pane ${view === 'kanban' ? 'is-kanban' : ''}`} ref={pane}
         onScroll={(event) => { const element = event.currentTarget; savedScroll.current[view] = element.scrollTop; if (view === 'conversation') following.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80 }}>
         <Tabs.Panel value="conversation" className="saved-conversation">
-          {isAudio && <div className="audio-source"><audio ref={audio} controls preload="none" aria-label="Аудиозапись встречи" src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`} /></div>}
+          {isAudio && <div className="audio-source"><audio ref={audio} controls preload="none" aria-label="Аудиозапись встречи" src={`/api/v1/meetings/${encodeURIComponent(meeting.id)}/audio`}
+            onLoadedMetadata={() => { if (audio.current && pendingSeek.current !== null) { audio.current.currentTime = pendingSeek.current; pendingSeek.current = null } }} /></div>}
           <section aria-label="Стенограмма разговора" data-testid="meeting-conversation">
-            {segments.length ? segments.map((segment, index) => <article data-transcript-segment data-start={segment.start} data-end={segment.end} tabIndex={-1} key={`${index}-${segment.start}`} className="live-utterance saved-utterance">
-              <Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text><Text className="live-utterance-text">{segment.text}</Text>
-            </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}>{meeting.transcript}</div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>Здесь появится разговор</Title><Text c="dimmed">{processing ? 'Первые реплики появятся по мере распознавания записи.' : 'Распознайте запись, чтобы прочитать стенограмму.'}</Text></div>}
+            {segments.length ? segments.map((segment, index) => <article data-transcript-segment data-start={segment.start} data-end={segment.end} data-start-char={ranges[index]?.start} data-end-char={ranges[index]?.end} tabIndex={-1} key={`${index}-${segment.start}`} className="live-utterance saved-utterance">
+              <Text size="sm" c="dimmed" component="time">{timestamp(segment.start)}</Text><Text className="live-utterance-text"><SourceHighlight text={segment.text} offset={ranges[index]?.start} selection={focusedSource} /></Text>
+            </article>) : meeting.transcript ? <div className="live-utterance-text saved-transcript" data-testid="transcript" tabIndex={-1}><SourceHighlight text={meeting.transcript} offset={0} selection={focusedSource} /></div> : <div className="live-empty"><AudioLines size={28} aria-hidden="true" /><Title order={2}>Здесь появится разговор</Title><Text c="dimmed">{processing ? 'Первые реплики появятся по мере распознавания записи.' : 'Распознайте запись, чтобы прочитать стенограмму.'}</Text></div>}
             {processing && segments.length > 0 && <Text className="audio-feed-continuation" size="sm" c="dimmed">Продолжаем распознавать…</Text>}
           </section>
         </Tabs.Panel>
@@ -116,26 +127,45 @@ export function MeetingWorkspace({ meeting, view, onViewChange }: {
           {!board.isError && board.data && <>
             {analyzing && <Text size="sm" c="dimmed" mb="md">Готовим итоги встречи. Промежуточные выводы могут уточняться.</Text>}
             {board.data.status === 'failed' && <InlineError>{boardError(board.data.error_code)} Промежуточные выводы могут быть неполными.</InlineError>}
-            {board.data.summary.length > 0 && <section className="meeting-summary" aria-label="Краткая выжимка"><Text className="live-note-kind">Кратко о встрече</Text>
-              {board.data.summary.map((item, index) => <div className="meeting-summary-item" key={index}><Text>{item.text}</Text><Anchor component="button" className="live-source-link" onClick={() => source(item.quote, item.evidence?.start_seconds ?? undefined)}>К разговору<ArrowRight size={15} aria-hidden="true" /></Anchor></div>)}
-            </section>}
             <Stack gap="md">{notes.map((card) => {
               const kind = noteKinds[card.kind]; const Icon = kind.icon
-              return <article className="live-note" key={card.id}><div className="live-note-icon"><Icon size={24} aria-hidden="true" /></div><div className="live-note-copy"><Text className="live-note-kind">{kind.label}</Text><Text className="live-note-text">{card.title}</Text>{card.description && <Text size="sm" c="dimmed" mt="xs">{card.description}</Text>}</div>
-                {card.quote && <Anchor component="button" className="live-source-link" onClick={() => noteSource(card)}>К разговору<ArrowRight size={17} aria-hidden="true" /></Anchor>}
+              return <article className="live-note saved-insight-note" key={card.id}><div className="live-note-icon"><Icon size={24} aria-hidden="true" /></div><div className="live-note-copy"><Text className="live-note-kind">{kind.label}</Text><Text className="live-note-text">{card.title}</Text>{card.description && <Text size="sm" c="dimmed" mt="xs">{card.description}</Text>}
+                {card.quote && <SavedSource quote={card.quote} evidence={resolveMeetingEvidence(meeting, card.quote, card.evidence, card.start_char)} onConversation={source} onOpen={setOpenedSource} />}</div>
               </article>
             })}</Stack>
-            {!board.data.summary.length && !notes.length && <div className="live-empty"><Sparkles size={29} aria-hidden="true" /><Title order={2}>{processing ? 'Сначала распознаем разговор' : analyzing ? 'Готовим первые итоги' : 'Итогов пока нет'}</Title><Text c="dimmed">Здесь появятся темы, решения, поручения и открытые вопросы встречи.</Text></div>}
-            {recognized && ['idle', 'failed'].includes(board.data.status) && <Group justify="center" mt="lg"><Button loading={generation.isPending} onClick={() => generation.mutate()}>{board.data.status === 'failed' ? 'Повторить анализ' : 'Подготовить итоги'}</Button></Group>}
+            {!notes.length && <div className="live-empty"><Sparkles size={29} aria-hidden="true" /><Title order={2}>{processing ? 'Сначала распознаем разговор' : analyzing ? 'Готовим первые итоги' : 'Итогов пока нет'}</Title><Text c="dimmed">Здесь появятся темы, решения, поручения и открытые вопросы встречи.</Text></div>}
+            {recognized && board.data.status === 'failed' && <Group justify="center" mt="lg"><Button loading={generation.isPending} onClick={() => generation.mutate()}>Повторить анализ</Button></Group>}
             {generation.isError && <InlineError>{boardError(generation.error)}</InlineError>}
             {notes.some((card) => card.kind === 'task') && <Group justify="center" mt="lg"><Button variant="light" leftSection={<ListChecks size={18} />} onClick={() => changeView('kanban')}>К поручениям в канбане</Button></Group>}
           </>}
-          {recognized && <Disclosure label="Задать вопрос по встрече" className="saved-meeting-chat"><MeetingChat meetingId={meeting.id} /></Disclosure>}
         </Tabs.Panel>
         <Tabs.Panel value="kanban" className="saved-kanban">
           <MeetingBoard key={`kanban-${meeting.id}`} embedded meetingId={meeting.id} title={meeting.title} meeting={meeting} canGenerate={recognized} />
         </Tabs.Panel>
       </div>
     </Tabs>
+    {openedSource && <MeetingEvidence key={`${openedSource.start_char}:${openedSource.end_char}`} meeting={meeting} evidence={openedSource} onClose={() => setOpenedSource(null)} />}
   </section>
+}
+
+function SourceHighlight({ text, offset, selection }: { text: string; offset?: number; selection: Evidence | null }) {
+  if (offset === undefined || !selection) return text
+  const characters = Array.from(text)
+  const start = Math.max(0, selection.start_char - offset)
+  const end = Math.min(characters.length, selection.end_char - offset)
+  if (start >= end) return text
+  return <>{characters.slice(0, start).join('')}<mark className="meeting-source-highlight">{characters.slice(start, end).join('')}</mark>{characters.slice(end).join('')}</>
+}
+
+function SavedSource({ quote, evidence, onConversation, onOpen }: {
+  quote: string; evidence: Evidence | null; onConversation: (quote: string, evidence: Evidence | null) => void; onOpen: (evidence: Evidence) => void
+}) {
+  return <div className="saved-insight-source">
+    <Text size="xs" c="dimmed">Из разговора{evidence?.speaker ? ` · ${evidence.speaker}` : ''}{evidence?.start_seconds !== null && evidence?.start_seconds !== undefined ? ` · ${timestamp(evidence.start_seconds)}` : ''}</Text>
+    <blockquote>{quote}</blockquote>
+    <Group gap="md" wrap="wrap">
+      {evidence && <Button variant="subtle" size="compact-sm" onClick={() => onOpen(evidence)}>Открыть фрагмент</Button>}
+      <Anchor component="button" className="live-source-link" onClick={() => onConversation(quote, evidence)}>К разговору<ArrowRight size={15} aria-hidden="true" /></Anchor>
+    </Group>
+  </div>
 }

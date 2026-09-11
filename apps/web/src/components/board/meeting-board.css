@@ -114,3 +114,25 @@
 }
 @media print { .meeting-board.transcript-panel { padding: 0 !important; } }
 .card-clarifications-alert .mantine-Alert-label { color: #8a3511; }
+/* One compact action row, using the same Mantine controls as the workspace. */
+.board-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; overflow-x: auto; padding: 2px 1px 6px; }
+.board-toolbar > * { flex-shrink: 0; }
+.board-toolbar .board-grouping { width: 210px; }
+.board-toolbar .board-search { flex: 1 0 160px; min-width: 160px; }
+.board-toolbar .mantine-Button-root { font-weight: 500; }
+.board-filter-fields { display: grid; gap: 14px; }
+.board-filter-popover { max-width: calc(100vw - 24px); }
+.card-drag-handle { margin-left: auto; flex-shrink: 0; cursor: grab; touch-action: none; color: #677c70; }
+.card-drag-handle:hover { color: #215c49; background: #edf5ef; }
+.card-drag-handle:active { cursor: grabbing; }
+.card-drag-handle:focus-visible { outline: 2px solid #347358; outline-offset: 2px; }
+.kanban-card.card-dragging { opacity: .3; border-style: dashed; }
+.kanban-column { position: relative; transition: box-shadow 120ms ease, background-color 120ms ease; }
+.kanban-column.drop-target { outline: 2px solid #347358; outline-offset: -2px; background: #dcece1; }
+.board-drop-hint { border: 1px dashed #477d60; border-radius: 8px; padding: 18px 10px; margin-top: 10px; text-align: center; font-size: 12px; color: #215c49; }
+.kanban-drag-preview { display: grid; gap: 10px; padding: 18px; background: #fffefa; border: 1px solid #477d60; border-radius: 10px; box-shadow: 0 12px 32px #123b2f26; cursor: grabbing; overflow-wrap: anywhere; }
+.kanban-drag-preview strong { font-size: 14px; line-height: 1.5; }
+.kanban-drag-preview span { font-size: 12px; color: #4e6458; }
+@media (pointer: coarse) { .card-drag-handle { width: 36px; height: 36px; } }
+@media (prefers-reduced-motion: reduce) { .kanban-column { transition: none; } }
+@media print { .card-drag-handle, .kanban-drag-preview, .board-drop-hint { display: none !important; } }

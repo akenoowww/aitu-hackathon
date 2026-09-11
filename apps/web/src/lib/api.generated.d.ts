@@ -328,6 +328,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meetings/{meeting_id}/audio-clips": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Clips */
+        get: operations["getMeetingAudioClips"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meetings/{meeting_id}/audio-clips/{clip_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Play Clip */
+        get: operations["playMeetingAudioClip"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/meetings": {
         parameters: {
             query?: never;
@@ -375,6 +409,75 @@ export interface paths {
         put?: never;
         /** Assistant Chat */
         post: operations["askAssistant"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Assistant Tasks */
+        post: operations["createAssistantTasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Conversation List */
+        get: operations["listAssistantConversations"];
+        put?: never;
+        /** Conversation Create */
+        post: operations["createAssistantConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/conversations/{conversation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Conversation Detail */
+        get: operations["getAssistantConversation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assistant/conversations/{conversation_id}/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Conversation Save Turn */
+        post: operations["saveAssistantTurn"];
         delete?: never;
         options?: never;
         head?: never;
@@ -629,7 +732,7 @@ export interface components {
              * Action
              * @enum {string}
              */
-            action: "reply" | "search_meetings";
+            action: "reply" | "search_meetings" | "create_tasks";
             /** Answer */
             answer: string;
             /** Search Query */
@@ -641,6 +744,52 @@ export interface components {
             question: string;
             /** History */
             history?: components["schemas"]["ConversationMessage"][];
+        };
+        /** AudioClip */
+        AudioClip: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Speaker */
+            speaker: string;
+            /** Start */
+            start: number;
+            /** End */
+            end: number;
+            /** Start Char */
+            start_char: number;
+            /** End Char */
+            end_char: number;
+            /** Available */
+            available: boolean;
+        };
+        /** BoardCitation */
+        BoardCitation: {
+            /**
+             * Kind
+             * @default board
+             * @constant
+             */
+            kind: "board";
+            /** Source Id */
+            source_id: string;
+            /** Quote */
+            quote: string;
+        };
+        /** BoardCoverage */
+        BoardCoverage: {
+            /**
+             * Available Sources
+             * @default 0
+             */
+            available_sources: number;
+            /**
+             * Selected Sources
+             * @default 0
+             */
+            selected_sources: number;
         };
         /** BoardOutput */
         BoardOutput: {
@@ -659,6 +808,37 @@ export interface components {
             cards: components["schemas"]["Card"][];
             /** Progress */
             progress: number;
+        };
+        /** BoardSource */
+        BoardSource: {
+            /** Source Id */
+            source_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "summary" | "kanban";
+            /**
+             * Meeting Id
+             * Format: uuid
+             */
+            meeting_id: string;
+            /** Meeting Title */
+            meeting_title: string;
+            /** Card Id */
+            card_id: string | null;
+            /** Title */
+            title: string;
+            /** Text */
+            text: string;
+            /** Board Version */
+            board_version: number;
+            /** Provisional */
+            provisional: boolean;
+            /** Transcript Current */
+            transcript_current: boolean;
+            /** Transcript Quote */
+            transcript_quote: string | null;
         };
         /** Card */
         Card: {
@@ -870,6 +1050,36 @@ export interface components {
             /** Quote */
             quote: string;
         };
+        /** ConversationCreate */
+        ConversationCreate: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /** ConversationDetail */
+        ConversationDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Turns */
+            turns: components["schemas"]["ConversationTurnOutput"][];
+        };
         /** ConversationMessage */
         ConversationMessage: {
             /**
@@ -879,6 +1089,82 @@ export interface components {
             role: "user" | "assistant";
             /** Content */
             content: string;
+        };
+        /** ConversationSummary */
+        ConversationSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ConversationTurnInput */
+        ConversationTurnInput: {
+            /** Question */
+            question: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Result */
+            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"];
+        };
+        /** ConversationTurnOutput */
+        ConversationTurnOutput: {
+            /** Question */
+            question: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Result */
+            result: components["schemas"]["GeneralChatResult"] | components["schemas"]["MeetingChatResult"] | components["schemas"]["TaskChatResult"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CreatedTask */
+        CreatedTask: {
+            /**
+             * Meeting Id
+             * Format: uuid
+             */
+            meeting_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description: string;
+            /** Assignee */
+            assignee: string | null;
+            /** Due Date */
+            due_date: string | null;
+            /** Due Text */
+            due_text: string | null;
+            /**
+             * Card Id
+             * Format: uuid
+             */
+            card_id: string;
+            /** Meeting Title */
+            meeting_title: string;
+            /** Board Version */
+            board_version: number;
         };
         /** ErrorBody */
         ErrorBody: {
@@ -909,6 +1195,16 @@ export interface components {
             end_seconds?: number | null;
             /** Speaker */
             speaker?: string | null;
+        };
+        /** GeneralChatResult */
+        GeneralChatResult: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "assistant";
+            /** Answer */
+            answer: string;
         };
         /** Graph */
         Graph: {
@@ -1030,6 +1326,41 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** MeetingAudioClips */
+        MeetingAudioClips: {
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "live" | "none";
+            /** Clips */
+            clips: components["schemas"]["AudioClip"][];
+        };
+        /** MeetingChatResult */
+        MeetingChatResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "answered" | "insufficient_evidence";
+            /** Answer */
+            answer: string;
+            /** Claims */
+            claims: components["schemas"]["WorkspaceClaim"][];
+            /** Sources */
+            sources: components["schemas"]["WorkspaceSource"][];
+            /** Catalog Sources */
+            catalog_sources?: components["schemas"]["CatalogSource"][];
+            /** Board Sources */
+            board_sources?: components["schemas"]["BoardSource"][];
+            board_coverage?: components["schemas"]["BoardCoverage"];
+            coverage: components["schemas"]["WorkspaceCoverage"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "meetings";
         };
         /** MeetingCreate */
         MeetingCreate: {
@@ -1299,6 +1630,47 @@ export interface components {
             quote: string;
             evidence?: components["schemas"]["Evidence"] | null;
         };
+        /** TaskChatResult */
+        TaskChatResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "clarification";
+            /** Answer */
+            answer: string;
+            /** Tasks */
+            tasks: components["schemas"]["CreatedTask"][];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            mode: "tasks";
+        };
+        /** TaskCreationRequest */
+        TaskCreationRequest: {
+            /** Question */
+            question: string;
+            /** History */
+            history?: components["schemas"]["ConversationMessage"][];
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+        };
+        /** TaskCreationResult */
+        TaskCreationResult: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "created" | "clarification";
+            /** Answer */
+            answer: string;
+            /** Tasks */
+            tasks: components["schemas"]["CreatedTask"][];
+        };
         /** TranscriptSegment */
         TranscriptSegment: {
             /** Start */
@@ -1381,6 +1753,9 @@ export interface components {
             sources: components["schemas"]["WorkspaceSource"][];
             /** Catalog Sources */
             catalog_sources?: components["schemas"]["CatalogSource"][];
+            /** Board Sources */
+            board_sources?: components["schemas"]["BoardSource"][];
+            board_coverage?: components["schemas"]["BoardCoverage"];
             coverage: components["schemas"]["WorkspaceCoverage"];
         };
         /** WorkspaceClaim */
@@ -1388,7 +1763,7 @@ export interface components {
             /** Text */
             text: string;
             /** Citations */
-            citations: (components["schemas"]["Citation"] | components["schemas"]["CatalogCitation"])[];
+            citations: (components["schemas"]["Citation"] | components["schemas"]["CatalogCitation"] | components["schemas"]["BoardCitation"])[];
         };
         /** WorkspaceCoverage */
         WorkspaceCoverage: {
@@ -3756,6 +4131,231 @@ export interface operations {
             };
         };
     };
+    getMeetingAudioClips: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meeting_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingAudioClips"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    playMeetingAudioClip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                meeting_id: string;
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listMeetings: {
         parameters: {
             query?: {
@@ -4232,6 +4832,578 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantDecision"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAssistantTasks: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-requested-with"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskCreationResult"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listAssistantConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAssistantConversation: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-requested-with"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationSummary"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAssistantConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationDetail"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    saveAssistantTurn: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-requested-with"?: string | null;
+            };
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConversationTurnInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationTurnOutput"];
                 };
             };
             /** @description Bad Request */

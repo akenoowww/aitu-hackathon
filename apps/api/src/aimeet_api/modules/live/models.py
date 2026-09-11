@@ -44,6 +44,11 @@ class LiveRoom(Base):
     transcript_revision: Mapped[int] = mapped_column(Integer, default=0)
     audio_error: Mapped[str | None] = mapped_column(String(48))
     insights: Mapped[list] = mapped_column(JSON, default=list)
+    recording_status: Mapped[str] = mapped_column(String(16), default="none")
+    recording_error: Mapped[str | None] = mapped_column(String(48))
+    recording_lease: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    recording_lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    recording_attempts: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class LiveParticipant(Base):
@@ -85,3 +90,19 @@ class LiveChunk(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error_code: Mapped[str | None] = mapped_column(String(48))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LiveRecordingStream(Base):
+    __tablename__ = "live_recording_streams"
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    room_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("live_rooms.id", ondelete="CASCADE"),
+        index=True,
+    )
+    participant_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("live_participants.id", ondelete="CASCADE"),
+    )
+    start: Mapped[float] = mapped_column(Float)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

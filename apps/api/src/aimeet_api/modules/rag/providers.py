@@ -8,7 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from aimeet_api.core.config import Settings
-from aimeet_api.modules.rag.schemas import AssistantDecision, GeneratedAnswer
+from aimeet_api.modules.rag.schemas import AssistantDecision, GeneratedAnswer, TaskCreationPlan
 
 
 class RagError(Exception):
@@ -153,6 +153,12 @@ class Providers:
         if result.action == "search_meetings" and not result.search_query.strip():
             raise RagError("INVALID_MODEL_RESPONSE", 502)
         return result
+
+    def plan_tasks(self, instructions: str, context: str) -> TaskCreationPlan:
+        try:
+            return self._generate(instructions, context, response_model=TaskCreationPlan)
+        except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
+            raise RagError("INVALID_MODEL_RESPONSE", 502) from exc
 
     def _generate(self, instructions: str, context: str, response_model=GeneratedAnswer):
         config = self.config

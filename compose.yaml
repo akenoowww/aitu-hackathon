@@ -44,6 +44,8 @@ x-api: &api
     LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Run make init}
     LIVE_ANALYSIS_INTERVAL: ${LIVE_ANALYSIS_INTERVAL:-12}
     LIVE_ANALYSIS_REASONING: ${LIVE_ANALYSIS_REASONING:-low}
+    LIVE_MAX_PARTICIPANTS: ${LIVE_MAX_PARTICIPANTS:-12}
+    LIVE_MAX_MINUTES: ${LIVE_MAX_MINUTES:-120}
     HF_HUB_OFFLINE: '1'
     HF_HUB_DISABLE_TELEMETRY: '1'
     TRANSFORMERS_OFFLINE: '1'
@@ -189,6 +191,7 @@ services:
   live-analysis-worker:
     <<: *api
     command: [.venv/bin/python, -m, aimeet_api.modules.live.worker, analysis]
+    volumes: [audio-data:/data/audio]
     networks: [data, ai-egress, media]
     extra_hosts: [host.docker.internal:host-gateway]
     depends_on:

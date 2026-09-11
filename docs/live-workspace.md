@@ -1,22 +1,72 @@
-# Live workspace: current implementation brief
+# Голосовой Live workspace
 
-User-confirmed scope (11 September 2026): an owned room inside Soyle/Aimeet, **voice only, no video**, started with one action and shared by invite link. Two exclusive content modes: Conversation (speaker-attributed live transcript) and Outcomes (goals, ideas, decisions, tasks, open questions). Do not show a transcript and outcomes side by side. Use a compact participant strip and few controls. Existing archive and file transcription remain available.
+Реализован собственный голосовой workspace внутри Soyle/Aimeet. В разделе **Live → Новый разговор** создаётся комната и включается микрофон. Гости входят по ссылке, вводят имя и видят условия обработки до подключения. Видеокамера не используется. Владелец переключается между **Разговором** со стенограммой и **Итогами** с целями, идеями, решениями, поручениями и вопросами. Эти режимы не показываются одновременно. Нажатие на источник итога открывает соответствующую реплику.
 
-Audio recognition must run locally. The user explicitly allows sending **text only** to OpenAI for live analysis. Meeting participants must see this processing boundary before joining. Generated design sample people and notes are never runtime fixtures.
+Это уточнённый пользователем сценарий от 11 сентября 2026 года: собственная комната вместо Google Meet, голос вместо видео, локальное распознавание и разрешённая передача **текста** в OpenAI. Требования PDF используются как исходная спецификация; более поздние решения пользователя имеют приоритет. Vexa не требуется для собственного голосового транспорта. Используются self-hosted LiveKit и уже установленный Faster-Whisper; сравнение точности разных ASR на корпусе пользователя не проводилось.
 
-Design: Art-Direct ImageGen FULL lifecycle. First concurrent video composition rejected. Replacement voice-only outcomes mockup is in `.frontend-workbench/sessions/soyle-live-voice/`; bitmap review passed, exact user acceptance is pending. The existing Soyle logo stays authoritative. No live implementation exists yet at the time this brief was written.
+## Запуск
 
-Planned architecture: self-hosted LiveKit for actual multi-party audio, existing FastAPI for room ownership/invites/session grants, and PostgreSQL for retained utterances and cited insights. Each participant's published microphone track also feeds a local PCM transcription stream, so the transcriber attributes speech to the authenticated room participant without guessing voices. A persistent local Faster-Whisper worker processes bounded speech chunks; an independent text-analysis worker uses OpenAI. Loss of audio or analysis connectivity is represented truthfully. Ending a room blocks new joins and eventually preserves finalized content in the archive. Media and ASR use separate connections to avoid container ICE advertisement assumptions.
+Для нового окружения (после установки Python-зависимостей проекта в `apps/api/.venv`):
 
-Local acceptance must include two separate browser participants actually exchanging audio, live transcript attribution, mic mute/leave/end, invitation boundaries, reconnect/processing failure states, analysis citing only provided utterances, persistence, responsive modes, and preservation of existing archive tests. Localhost proof does not establish remote calling: remote deployment requires trusted HTTPS/WSS and externally reachable LiveKit media/TURN configuration.
+```sh
+python3 scripts/init-local.py
+apps/api/.venv/bin/python scripts/prepare-stt-model.py
+# Добавить OPENAI_API_KEY в .env; не передавать ключ через интерфейс встречи.
+make up
+```
 
-## Running live processing
+Для обновления существующего окружения сначала `python3 scripts/backup.py`, затем сборка и запуск. `init-local.py` добавляет отсутствующие ключи LiveKit, не меняя существующие пароли. Веса локального Whisper хранятся в `models/whisper-small`, worker загружает их без сетевого скачивания.
 
-Live needs both `live-speech-worker` (local audio recognition) and `live-analysis-worker` (text analysis and room finalization), in addition to API and LiveKit. A healthy API and a working microphone do not establish that speech is being processed. The web service depends on both workers so a normal `docker compose up -d web` starts them too. Deployments using `--no-deps` must start these workers explicitly:
+Адрес по умолчанию: http://127.0.0.1:8787/live. После изменения ключа пересоздать как минимум API и `live-analysis-worker`. Для Live одновременно нужны API, LiveKit, `live-speech-worker` и `live-analysis-worker`. Обычный запуск web подтягивает оба worker; при `--no-deps` запустить их явно:
 
 ```sh
 docker compose up -d --no-deps live-speech-worker live-analysis-worker
-docker compose ps live-speech-worker live-analysis-worker
+docker compose ps livekit live-speech-worker live-analysis-worker
 ```
 
-Speech arrives in phrases, not individual tokens: a pause of roughly 0.6 seconds flushes a phrase, and continuous speech is split into chunks of at most roughly 8 seconds. Recognition time and the 1.5-second room polling interval add latency. Queued audio with no running speech worker will not produce a transcript. Temporary history-request failures retry automatically with backoff; permission failures require restoring room access.
+Настройки `.env`:
+
+| Переменная | По умолчанию | Назначение |
+| --- | --- | --- |
+| LIVEKIT_API_KEY / LIVEKIT_API_SECRET | генерируются init-local.py | Серверные подписи; браузеру секрет не выдаётся |
+| LIVEKIT_NODE_IP | 127.0.0.1 | Адрес ICE-кандидата локального SFU |
+| LIVE_MAX_PARTICIPANTS | 12 | Лимит зарегистрированных участников комнаты |
+| LIVE_MAX_MINUTES | 120 | Предельная длительность комнаты |
+| LIVE_ANALYSIS_INTERVAL | 12 | Минимальный интервал между анализами нового текста, секунды |
+| LIVE_ANALYSIS_REASONING | low | Уровень reasoning для живых итогов |
+| RAG_LLM_PROVIDER / RAG_LLM_MODEL | openai / gpt-5.6-luna | Провайдер и модель текста |
+
+## Поток данных и сохранение
+
+LiveKit пересылает микрофонные аудиодорожки участникам. Тот же микрофон через AudioWorklet отправляет PCM16 mono 16 kHz в локальный WebSocket API. Токен связывает поток с конкретным участником; имя говорящего берётся из участника комнаты, а не угадывается моделью. При нескольких людях возле одного микрофона они останутся одним участником.
+
+WebRTC VAD выделяет фразы: пауза около 0,6 секунды завершает фрагмент, непрерывная речь делится примерно каждые 8 секунд. Локальный Faster-Whisper small CPU/int8 обрабатывает очередь. Это обновление завершённых фраз, не пословная выдача токенов. К задержке фразы добавляются распознавание, очередь и опрос интерфейса каждые 1,5 секунды.
+
+Независимый worker отправляет в OpenAI только текст реплик и предыдущие выводы через Responses API (`store: false`, без tools). Короткие идентификаторы источников ограничены JSON Schema; сервер подставляет настоящие UUID и оригинальные цитаты. Это проверяет существование источника, но не гарантирует смысловую безошибочность модели. Новые фрагменты и изменения итогов появляются без перезагрузки.
+
+Временный сбой анализа не останавливает голос и стенограмму. Новая речь позволяет повторить анализ; владелец также может нажать повтор. Проблемы микрофона, соединения, распознавания и обновления данных видимы в интерфейсе.
+
+«Завершить для всех» закрывает SFU-комнату и новые входы, обрабатывает последние фрагменты и сохраняет встречу в существующий архив. Итоги переносятся в доску сохранённой встречи с привязкой к тексту, без второго вызова модели. Гость не получает доступа к другим встречам или аккаунту владельца. Удаление сохранённой встречи удаляет связанные данные Live. Завершённые данные остаются доступными через уже выданный доступ в пределах срока токена.
+
+Секрет приглашения находится во fragment ссылки, а не query-параметрах. Host-токен дополнительно требует действующей сессии аккаунта. Media-токен разрешает публикацию только микрофона; SDK использует служебные data channels, данные оттуда не изменяют состояние приложения. SFU не создаёт комнату автоматически по старому токену после завершения.
+
+## Сеть и локальность
+
+`live-speech-worker` подключён только к внутренней data-сети. Весам запрещены сетевые загрузки. Text-worker имеет доступ к OpenAI и SFU, не монтирует каталог аудио. LiveKit закреплён на v1.13.6 с digest, имеет одну media-сеть. Для этой Docker-конфигурации `enable_loopback_candidate: false` предотвращает дублированные ICE-кандидаты; `node_ip` всё равно задан явно.
+
+Ссылка с `localhost` или `127.0.0.1` работает только на этом компьютере. Для участников на других устройствах нужны общий HTTPS/WSS-адрес приложения, ALLOWED_ORIGINS, secure cookies, объявляемый адрес SFU и доступные media-порты; для сетей с ограничениями — TURN. Базовый Compose намеренно публикует интерфейс и media-порты на loopback. Доступ через Интернет, NAT и мобильные сети не проверен.
+
+`compose.rag-offline.yaml` переводит также Live-анализ на локальный Ollama, очищает его OpenAI key и сохраняет доступ API/worker к внутренней media-сети. Полностью локальная генерация предусмотрена конфигурацией, но текущая живая проверка сделана с разрешённым пользователем OpenAI.
+
+## Проверки 11 сентября 2026 года
+
+- Регрессия архива: браузерный цикл вход → создание → перезагрузка → поиск → удаление → выход прошёл после исправления явного перехода на `/login`.
+- Backend: проверки приглашений, полномочий владельца/гостя, PCM/VAD, повторного подключения потоков, lease/fencing, цитат, повторов анализа, финализации, переноса в архив и удаления связанных данных.
+- Frontend: lint, TypeScript и production build. Browser-проверки запуска комнаты, состояния ошибки подключения и автоматического восстановления ранних реплик выполнены с управляемыми ответами API; они не заменяют проверку настоящего звука.
+- Изолированный Docker-стенд: два отдельных Chrome с разными синтетическими микрофонами действительно обменялись звуком (измерена энергия декодированного удалённого аудио), получили подписанные реплики и настоящие итоги OpenAI; mute, переключение режимов, мобильный viewport и завершение для обоих участников проверены.
+- Основной запуск `http://127.0.0.1:8787` также прошёл полный двухбраузерный сценарий с настоящим звуком, источниками итогов и открытием сохранённой встречи. Тестовая запись удалена; количество прежних встреч осталось 2, прежних комнат — 5. Перед обновлением сделан backup, восстановление проверено в отдельной временной базе. `alembic check` не обнаружил расхождения схемы.
+- Отдельный реальный PCM → локальный ASR → OpenAI тест завершился примерно за 15,7 секунды, включая 9 секунд подачи аудио. Прямой анализ двух текстовых реплик занял около 3,8 секунды. Это отдельные измерения на локальной машине, не SLA и не нагрузочный тест.
+
+Дизайн создан через Art-Direct ImageGen: первая перегруженная композиция отклонена; второй голосовой вариант с раздельными режимами принят пользователем («Да, внедряй»). Реализация сохраняет этот принцип и общий sidebar проекта. Артефакты и фактические browser traces находятся в игнорируемой `.frontend-workbench/sessions/soyle-live-voice/qa/`.
+
+Формальный FULL lifecycle ещё не имеет общего PASS: канонический адаптер ограничивает WebRTC, а валидатор маршрутов не распознаёт синтаксис TanStack `/live/$roomId`. Успешные обычные Chrome-проверки не подменяют этот формальный статус. Подробности — `qa/verification-report.md` внутри активной workbench-сессии.

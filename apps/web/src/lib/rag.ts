@@ -39,30 +39,56 @@ const workspaceAnswerSchema = z.object({
   status: z.enum(['answered', 'insufficient_evidence']), answer: z.string(),
   claims: z.array(z.object({ text: z.string(), citations: z.array(z.union([
     citationSchema, z.object({ kind: z.literal('catalog'), source_id: z.string(), quote: z.string() }),
+    z.object({ kind: z.literal('board'), source_id: z.string(), quote: z.string() }),
   ])) })),
   sources: z.array(sourceSchema.extend({
     meeting_id: z.uuid(), meeting_title: z.string(), meeting_created_at: z.string(),
   })),
   coverage: workspaceCoverageSchema,
   catalog_sources: z.array(z.object({ source_id: z.string(), text: z.string(), meeting_id: z.uuid().nullable(), meeting_title: z.string().nullable() })).default([]),
+  board_sources: z.array(z.object({
+    source_id: z.string(), kind: z.enum(['summary', 'kanban']), meeting_id: z.uuid(), meeting_title: z.string(),
+    card_id: z.uuid().nullable(), title: z.string(), text: z.string(), board_version: z.number().int(),
+    provisional: z.boolean(), transcript_current: z.boolean(), transcript_quote: z.string().nullable(),
+  })).default([]),
+  board_coverage: z.object({ available_sources: z.number().int(), selected_sources: z.number().int() }).default({ available_sources: 0, selected_sources: 0 }),
 }) satisfies z.ZodType<components['schemas']['WorkspaceAnswer']>
 export type WorkspaceAnswer = z.infer<typeof workspaceAnswerSchema>
 export type WorkspaceCoverage = z.infer<typeof workspaceCoverageSchema>
 
 export type ConversationMessage = { role: 'user' | 'assistant'; content: string }
-export type AssistantResult = { mode: 'assistant'; answer: string } | (WorkspaceAnswer & { mode: 'meetings' })
+const taskCreationSchema = z.object({
+  status: z.enum(['created', 'clarification']), answer: z.string(),
+  tasks: z.array(z.object({ meeting_id: z.uuid(), meeting_title: z.string(), card_id: z.uuid(),
+    board_version: z.number().int(), title: z.string(), description: z.string(),
+    assignee: z.string().nullable(), due_date: z.string().nullable(), due_text: z.string().nullable() })),
+}) satisfies z.ZodType<components['schemas']['TaskCreationResult']>
+export const assistantResultSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('assistant'), answer: z.string() }),
+  workspaceAnswerSchema.extend({ mode: z.literal('meetings') }),
+  taskCreationSchema.extend({ mode: z.literal('tasks') }),
+])
+export type AssistantResult = z.infer<typeof assistantResultSchema>
+
 const assistantDecisionSchema = z.object({
-  action: z.enum(['reply', 'search_meetings']), answer: z.string(), search_query: z.string(),
+  action: z.enum(['reply', 'search_meetings', 'create_tasks']), answer: z.string(), search_query: z.string(),
 }) satisfies z.ZodType<components['schemas']['AssistantDecision']>
 
-export async function talkToAssistant(question: string, history: ConversationMessage[], signal: AbortSignal): Promise<AssistantResult> {
-  const decision = await request('/assistant/chat', assistantDecisionSchema, { question, history }, signal)
+export async function talkToAssistant(question: string, history: ConversationMessage[], signal: AbortSignal,
+  operation: { id: string; retryTask: boolean; onTaskStart: () => void }): Promise<AssistantResult> {
+  const decision = operation.retryTask ? { action: 'create_tasks' as const, answer: '', search_query: '' }
+    : await request('/assistant/chat', assistantDecisionSchema, { question, history }, signal)
   if (decision.action === 'reply') return { mode: 'assistant', answer: decision.answer }
+  if (decision.action === 'create_tasks') {
+    operation.onTaskStart()
+    const result = await request('/assistant/tasks', taskCreationSchema, { question, history, request_id: operation.id }, signal)
+    return result.status === 'clarification' ? { mode: 'assistant', answer: result.answer } : { ...result, mode: 'tasks' }
+  }
   const result = await searchWorkspace(decision.search_query, signal, () => {})
   return { ...result, mode: 'meetings' }
 }
 
-async function request<T>(path: string, schema: z.ZodType<T>, question?: string | { question: string; history: ConversationMessage[] } | null, signal?: AbortSignal): Promise<T> {
+async function request<T>(path: string, schema: z.ZodType<T>, question?: string | { question: string; history: ConversationMessage[]; request_id?: string } | null, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: question === undefined ? 'GET' : 'POST', credentials: 'include', cache: 'no-store', signal,
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aimeet' },
@@ -124,6 +150,10 @@ export function ragError(error: unknown, scope: 'meeting' | 'workspace' = 'meeti
       WORKSPACE_INDEX_NOT_READY: 'Стенограммы ещё обрабатываются. Попробуйте отправить вопрос чуть позже.',
       WORKSPACE_SEARCH_FAILED: 'Не удалось обработать стенограммы для поиска. Попробуйте отправить вопрос ещё раз.',
       SEARCH_PREPARING: 'Стенограммы ещё обрабатываются. Попробуйте отправить вопрос чуть позже.',
+      BOARD_CONFLICT: 'Канбан изменился. Повторите запрос — уже сохранённые задачи не будут созданы повторно.',
+      BOARD_FULL: 'В канбане этой встречи достигнут лимит карточек.',
+      INVALID_TASK_PLAN: 'Не удалось определить задачи или встречу. Уточните запрос.',
+      OPERATION_CONFLICT: 'Запрос уже использовался с другими данными. Отправьте новое сообщение.',
       SOURCE_CHANGED: 'Одна из встреч изменилась во время поиска. Задайте вопрос ещё раз.',
       TRANSCRIPT_NOT_READY: 'Вопросы станут доступны после расшифровки записи.',
       PROVIDER_TIMEOUT: 'Модель не успела ответить. Попробуйте ещё раз.',

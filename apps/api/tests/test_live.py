@@ -175,7 +175,7 @@ def test_stream_fencing_and_local_pcm_storage(app, authenticated_client):
     state = authenticated_client.get(f"/api/v1/live/rooms/{room_id}", headers=auth(host)).json()
     assert state["utterances"][0]["participant_id"] == host["participant_id"]
     assert state["utterances"][0]["text"] == "Готовим пилот."
-    assert not chunk_path(app.state.settings, claim.id).exists()
+    assert chunk_path(app.state.settings, claim.id).read_bytes() == b"\x00\x00" * 16000
 
 
 def test_stale_audio_worker_cannot_publish_or_delete_replacement_source(app, authenticated_client):
@@ -294,3 +294,113 @@ def test_soft_analysis_failure_retries_only_on_new_speech(app, authenticated_cli
         db.commit()
     claim = claim_analysis(app.state.session_factory, app.state.settings)
     assert claim is not None and claim[2] == 2
+
+
+def test_live_archive_carries_outcomes_and_preserves_existing_edits(app, authenticated_client):
+    from aimeet_api.modules.intelligence.models import MeetingBoard
+    from aimeet_api.modules.live.archive import sync_archived_board
+
+    host = create(authenticated_client)
+    room_id = UUID(host["room_id"])
+    first_id, task_id = uuid4(), uuid4()
+    with app.state.session_factory() as db:
+        room = db.get(LiveRoom, room_id)
+        room.status = "ending"
+        room.ended_at = utcnow() - timedelta(seconds=10)
+        room.transcript_revision = room.analysis_through = 2
+        room.analysis_status = "ready"
+        room.insights = [
+            {
+                "kind": "goal",
+                "text": "Проверить пилот",
+                "source_ids": [str(first_id)],
+                "quotes": ["Проверим пилот."],
+            },
+            {
+                "kind": "task",
+                "text": "Подготовить смету",
+                "source_ids": [str(task_id)],
+                "quotes": ["Подготовим смету."],
+            },
+        ]
+        for identifier, start, text in [
+            (first_id, 0, "Проверим пилот."),
+            (task_id, 10, "Подготовим смету."),
+        ]:
+            db.add(
+                LiveChunk(
+                    id=identifier,
+                    room_id=room_id,
+                    participant_id=UUID(host["participant_id"]),
+                    status="done",
+                    start=start,
+                    end=start + 2,
+                    text=text,
+                )
+            )
+        db.commit()
+    finalize_rooms(app.state.session_factory, app.state.settings)
+    with app.state.session_factory() as db:
+        room = db.get(LiveRoom, room_id)
+        mid = room.meeting_id
+        board = db.get(MeetingBoard, mid)
+        assert board.status == "ready" and len(board.summary) == 2
+        assert [card["kind"] for card in board.cards] == ["topic", "task"]
+        assert board.cards[1]["assignee"] is None and board.cards[1]["due_date"] is None
+        edited = {**board.cards[1], "title": "Моя правка", "reviewed": True}
+        board.cards = [board.cards[0], edited]
+        db.commit()
+        sync_archived_board(db, room)
+        db.commit()
+        assert len(board.cards) == 2 and board.cards[1] == edited
+    output = authenticated_client.get(f"/api/v1/meetings/{mid}/board").json()
+    assert output["cards"][1]["evidence"]["start_seconds"] == 10
+    assert len(output["summary"]) == 2
+
+
+def test_archive_waits_for_final_live_analysis_without_second_generation(app, authenticated_client):
+    from aimeet_api.modules.intelligence.models import MeetingBoard
+
+    host = create(authenticated_client)
+    room_id, chunk_id, token = UUID(host["room_id"]), uuid4(), uuid4()
+    with app.state.session_factory() as db:
+        room = db.get(LiveRoom, room_id)
+        room.status = "ending"
+        room.ended_at = utcnow() - timedelta(seconds=10)
+        room.transcript_revision = 1
+        room.analysis_status = "processing"
+        room.analysis_lease, room.analysis_lease_until = token, utcnow() + timedelta(seconds=90)
+        db.add(
+            LiveChunk(
+                id=chunk_id,
+                room_id=room_id,
+                participant_id=UUID(host["participant_id"]),
+                status="done",
+                start=0,
+                end=2,
+                text="Решили запустить пилот.",
+            )
+        )
+        db.commit()
+    finalize_rooms(app.state.session_factory, app.state.settings)
+    with app.state.session_factory() as db:
+        mid = db.get(LiveRoom, room_id).meeting_id
+        board = db.get(MeetingBoard, mid)
+        assert board.status == "running" and board.lease_token is None and board.cards == []
+    process_analysis(
+        app.state.session_factory,
+        app.state.settings,
+        (room_id, token, 1),
+        generator=lambda *_: [
+            {
+                "kind": "decision",
+                "text": "Запустить пилот",
+                "source_ids": [str(chunk_id)],
+                "quotes": ["Решили запустить пилот."],
+            }
+        ],
+    )
+    with app.state.session_factory() as db:
+        board = db.get(MeetingBoard, mid)
+        assert board.status == "ready" and len(board.cards) == 1
+        assert board.cards[0]["kind"] == "decision"

@@ -2,11 +2,14 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.db.models import Meeting
-from aimeet_api.modules.live.models import LiveRoom
+from aimeet_api.modules.live.audio import chunk_path
+from aimeet_api.modules.live.models import LiveChunk, LiveRecordingStream, LiveRoom
+from aimeet_api.modules.live.recordings import recording_path
+from aimeet_api.modules.meetings.playback import router as playback_router
 from aimeet_api.modules.meetings.repository import MeetingRepository
 from aimeet_api.modules.meetings.schemas import (
     MeetingCreate,
@@ -17,6 +20,7 @@ from aimeet_api.modules.meetings.schemas import (
 from aimeet_api.modules.transcription.storage import audio_path
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
+router.include_router(playback_router)
 
 
 @router.get("", response_model=MeetingList, operation_id="listMeetings")
@@ -78,8 +82,30 @@ def delete_meeting(
     meeting = MeetingRepository(db, user.workspace_id).get(meeting_id)
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    clip_ids = list(
+        db.scalars(
+            select(LiveChunk.id)
+            .join(LiveRoom)
+            .where(
+                LiveRoom.meeting_id == meeting_id,
+            )
+        )
+    )
+    stream_ids = list(
+        db.scalars(
+            select(LiveRecordingStream.id)
+            .join(LiveRoom)
+            .where(
+                LiveRoom.meeting_id == meeting_id,
+            )
+        )
+    )
     db.execute(delete(LiveRoom).where(LiveRoom.meeting_id == meeting_id))
     db.delete(meeting)
     db.commit()
     audio_path(settings, meeting_id).unlink(missing_ok=True)
+    for clip_id in clip_ids:
+        chunk_path(settings, clip_id).unlink(missing_ok=True)
+    for stream_id in stream_ids:
+        recording_path(settings, stream_id).unlink(missing_ok=True)
     return Response(status_code=204)

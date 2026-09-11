@@ -4,7 +4,7 @@ import os
 import time
 import uuid
 from collections import deque
-from datetime import UTC
+from datetime import UTC, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect
@@ -12,6 +12,7 @@ from sqlalchemy import func, select, update
 
 from aimeet_api.db.models import utcnow
 from aimeet_api.modules.live.models import LiveChunk, LiveParticipant, LiveRoom
+from aimeet_api.modules.live.recordings import begin_recording, close_recording
 from aimeet_api.modules.live.router import check_host_session
 from aimeet_api.modules.live.security import decode_member
 
@@ -158,7 +159,11 @@ async def audio_stream(websocket: WebSocket, room_id: uuid.UUID):
     opened = time.monotonic()
     samples = 0
     last_check = 0.0
+    recording = None
     try:
+        recording = begin_recording(
+            factory, settings, room_id, participant_id, stream_token, offset
+        )
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
@@ -183,11 +188,19 @@ async def audio_stream(websocket: WebSocket, room_id: uuid.UUID):
                         or participant.revoked
                         or participant.stream_token != stream_token
                         or room is None
-                        or room.status != "active"
+                        or room.status not in {"active", "ending"}
+                        or (
+                            room.status == "ending"
+                            and room.ended_at is not None
+                            and room.ended_at.replace(tzinfo=UTC) < utcnow() - timedelta(seconds=5)
+                        )
                     ):
                         break
                     check_host_session(db, participant, websocket.cookies.get(settings.cookie_name))
                 last_check = elapsed
+            # Write the whole microphone stream before VAD; pauses and speech
+            # rejected by recognition must still exist in the full recording.
+            recording.write(data)
             for chunk in speech.feed(data):
                 if not persist_chunk(
                     factory, settings, room_id, participant_id, stream_token, offset, chunk
@@ -195,6 +208,19 @@ async def audio_stream(websocket: WebSocket, room_id: uuid.UUID):
                     break
     except (WebSocketDisconnect, RuntimeError):
         pass
+    except OSError:
+        with factory() as db:
+            db.execute(
+                update(LiveRoom)
+                .where(LiveRoom.id == room_id)
+                .values(
+                    recording_status="failed",
+                    recording_error="RECORDING_UNAVAILABLE",
+                    audio_error="RECORDING_UNAVAILABLE",
+                )
+            )
+            db.commit()
+        await websocket.close(code=1011)
     except HTTPException as exc:
         await websocket.send_json(
             {
@@ -203,6 +229,7 @@ async def audio_stream(websocket: WebSocket, room_id: uuid.UUID):
             }
         )
     finally:
+        close_recording(factory, stream_token, recording)
         chunk = speech.flush()
         if chunk:
             try:

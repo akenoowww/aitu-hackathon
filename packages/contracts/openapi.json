@@ -3016,6 +3016,290 @@
         }
       }
     },
+    "/api/v1/meetings/{meeting_id}/audio-clips": {
+      "get": {
+        "tags": [
+          "Meetings"
+        ],
+        "summary": "List Clips",
+        "operationId": "getMeetingAudioClips",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meeting Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingAudioClips"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/meetings/{meeting_id}/audio-clips/{clip_id}": {
+      "get": {
+        "tags": [
+          "Meetings"
+        ],
+        "summary": "Play Clip",
+        "operationId": "playMeetingAudioClip",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "meeting_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Meeting Id"
+            }
+          },
+          {
+            "name": "clip_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Clip Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/api/v1/meetings": {
       "get": {
         "tags": [
@@ -3667,6 +3951,744 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AssistantDecision"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/tasks": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Assistant Tasks",
+        "operationId": "createAssistantTasks",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-requested-with",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskCreationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/conversations": {
+      "get": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Conversation List",
+        "operationId": "listAssistantConversations",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ConversationSummary"
+                  },
+                  "title": "Response Listassistantconversations"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Conversation Create",
+        "operationId": "createAssistantConversation",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-requested-with",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/conversations/{conversation_id}": {
+      "get": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Conversation Detail",
+        "operationId": "getAssistantConversation",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/conversations/{conversation_id}/turns": {
+      "post": {
+        "tags": [
+          "RAG"
+        ],
+        "summary": "Conversation Save Turn",
+        "operationId": "saveAssistantTurn",
+        "security": [
+          {
+            "APIKeyCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "x-requested-with",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Requested-With"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationTurnInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationTurnOutput"
                 }
               }
             }
@@ -5947,7 +6969,8 @@
             "type": "string",
             "enum": [
               "reply",
-              "search_meetings"
+              "search_meetings",
+              "create_tasks"
             ],
             "title": "Action"
           },
@@ -5994,6 +7017,90 @@
           "question"
         ],
         "title": "AssistantQuestion"
+      },
+      "AudioClip": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "speaker": {
+            "type": "string",
+            "title": "Speaker"
+          },
+          "start": {
+            "type": "number",
+            "title": "Start"
+          },
+          "end": {
+            "type": "number",
+            "title": "End"
+          },
+          "start_char": {
+            "type": "integer",
+            "title": "Start Char"
+          },
+          "end_char": {
+            "type": "integer",
+            "title": "End Char"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "speaker",
+          "start",
+          "end",
+          "start_char",
+          "end_char",
+          "available"
+        ],
+        "title": "AudioClip"
+      },
+      "BoardCitation": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "board",
+            "title": "Kind",
+            "default": "board"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "quote"
+        ],
+        "title": "BoardCitation"
+      },
+      "BoardCoverage": {
+        "properties": {
+          "available_sources": {
+            "type": "integer",
+            "title": "Available Sources",
+            "default": 0
+          },
+          "selected_sources": {
+            "type": "integer",
+            "title": "Selected Sources",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "BoardCoverage"
       },
       "BoardOutput": {
         "properties": {
@@ -6052,6 +7159,89 @@
           "progress"
         ],
         "title": "BoardOutput"
+      },
+      "BoardSource": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "kanban"
+            ],
+            "title": "Kind"
+          },
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meeting Id"
+          },
+          "meeting_title": {
+            "type": "string",
+            "title": "Meeting Title"
+          },
+          "card_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Card Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "board_version": {
+            "type": "integer",
+            "title": "Board Version"
+          },
+          "provisional": {
+            "type": "boolean",
+            "title": "Provisional"
+          },
+          "transcript_current": {
+            "type": "boolean",
+            "title": "Transcript Current"
+          },
+          "transcript_quote": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcript Quote"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "kind",
+          "meeting_id",
+          "meeting_title",
+          "card_id",
+          "title",
+          "text",
+          "board_version",
+          "provisional",
+          "transcript_current",
+          "transcript_quote"
+        ],
+        "title": "BoardSource"
       },
       "Card": {
         "properties": {
@@ -6626,6 +7816,59 @@
         ],
         "title": "Citation"
       },
+      "ConversationCreate": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "ConversationCreate"
+      },
+      "ConversationDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationTurnOutput"
+            },
+            "type": "array",
+            "title": "Turns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "created_at",
+          "updated_at",
+          "turns"
+        ],
+        "title": "ConversationDetail"
+      },
       "ConversationMessage": {
         "properties": {
           "role": {
@@ -6650,6 +7893,216 @@
           "content"
         ],
         "title": "ConversationMessage"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary"
+      },
+      "ConversationTurnInput": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeneralChatResult"
+              },
+              {
+                "$ref": "#/components/schemas/MeetingChatResult"
+              },
+              {
+                "$ref": "#/components/schemas/TaskChatResult"
+              }
+            ],
+            "title": "Result",
+            "discriminator": {
+              "propertyName": "mode",
+              "mapping": {
+                "assistant": "#/components/schemas/GeneralChatResult",
+                "meetings": "#/components/schemas/MeetingChatResult",
+                "tasks": "#/components/schemas/TaskChatResult"
+              }
+            }
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question",
+          "id",
+          "result"
+        ],
+        "title": "ConversationTurnInput"
+      },
+      "ConversationTurnOutput": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "result": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GeneralChatResult"
+              },
+              {
+                "$ref": "#/components/schemas/MeetingChatResult"
+              },
+              {
+                "$ref": "#/components/schemas/TaskChatResult"
+              }
+            ],
+            "title": "Result",
+            "discriminator": {
+              "propertyName": "mode",
+              "mapping": {
+                "assistant": "#/components/schemas/GeneralChatResult",
+                "meetings": "#/components/schemas/MeetingChatResult",
+                "tasks": "#/components/schemas/TaskChatResult"
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question",
+          "id",
+          "result",
+          "created_at"
+        ],
+        "title": "ConversationTurnOutput"
+      },
+      "CreatedTask": {
+        "properties": {
+          "meeting_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Meeting Id"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Description"
+          },
+          "assignee": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "due_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Text"
+          },
+          "card_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Card Id"
+          },
+          "meeting_title": {
+            "type": "string",
+            "title": "Meeting Title"
+          },
+          "board_version": {
+            "type": "integer",
+            "title": "Board Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "meeting_id",
+          "title",
+          "description",
+          "assignee",
+          "due_date",
+          "due_text",
+          "card_id",
+          "meeting_title",
+          "board_version"
+        ],
+        "title": "CreatedTask"
       },
       "ErrorBody": {
         "properties": {
@@ -6755,6 +8208,28 @@
           "end_char"
         ],
         "title": "Evidence"
+      },
+      "GeneralChatResult": {
+        "properties": {
+          "mode": {
+            "type": "string",
+            "const": "assistant",
+            "title": "Mode"
+          },
+          "answer": {
+            "type": "string",
+            "maxLength": 12000,
+            "minLength": 1,
+            "title": "Answer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mode",
+          "answer"
+        ],
+        "title": "GeneralChatResult"
       },
       "Graph": {
         "properties": {
@@ -7054,6 +8529,96 @@
           "password"
         ],
         "title": "LoginInput"
+      },
+      "MeetingAudioClips": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "live",
+              "none"
+            ],
+            "title": "Source"
+          },
+          "clips": {
+            "items": {
+              "$ref": "#/components/schemas/AudioClip"
+            },
+            "type": "array",
+            "title": "Clips"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "clips"
+        ],
+        "title": "MeetingAudioClips"
+      },
+      "MeetingChatResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "answered",
+              "insufficient_evidence"
+            ],
+            "title": "Status"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceClaim"
+            },
+            "type": "array",
+            "title": "Claims"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "catalog_sources": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogSource"
+            },
+            "type": "array",
+            "title": "Catalog Sources"
+          },
+          "board_sources": {
+            "items": {
+              "$ref": "#/components/schemas/BoardSource"
+            },
+            "type": "array",
+            "title": "Board Sources"
+          },
+          "board_coverage": {
+            "$ref": "#/components/schemas/BoardCoverage"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/WorkspaceCoverage"
+          },
+          "mode": {
+            "type": "string",
+            "const": "meetings",
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "answer",
+          "claims",
+          "sources",
+          "coverage",
+          "mode"
+        ],
+        "title": "MeetingChatResult"
       },
       "MeetingCreate": {
         "properties": {
@@ -7775,6 +9340,102 @@
         ],
         "title": "SummaryOutput"
       },
+      "TaskChatResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "clarification"
+            ],
+            "title": "Status"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/CreatedTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "mode": {
+            "type": "string",
+            "const": "tasks",
+            "title": "Mode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "answer",
+          "tasks",
+          "mode"
+        ],
+        "title": "TaskChatResult"
+      },
+      "TaskCreationRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "History"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question",
+          "request_id"
+        ],
+        "title": "TaskCreationRequest"
+      },
+      "TaskCreationResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "created",
+              "clarification"
+            ],
+            "title": "Status"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/CreatedTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "answer",
+          "tasks"
+        ],
+        "title": "TaskCreationResult"
+      },
       "TranscriptSegment": {
         "properties": {
           "start": {
@@ -7993,6 +9654,16 @@
             "type": "array",
             "title": "Catalog Sources"
           },
+          "board_sources": {
+            "items": {
+              "$ref": "#/components/schemas/BoardSource"
+            },
+            "type": "array",
+            "title": "Board Sources"
+          },
+          "board_coverage": {
+            "$ref": "#/components/schemas/BoardCoverage"
+          },
           "coverage": {
             "$ref": "#/components/schemas/WorkspaceCoverage"
           }
@@ -8021,6 +9692,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/CatalogCitation"
+                },
+                {
+                  "$ref": "#/components/schemas/BoardCitation"
                 }
               ]
             },

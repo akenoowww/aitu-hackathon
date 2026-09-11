@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -36,9 +36,42 @@ class AssistantQuestion(Question):
 
 class AssistantDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["reply", "search_meetings"]
+    action: Literal["reply", "search_meetings", "create_tasks"]
     answer: str = Field(max_length=12000)
     search_query: str = Field(max_length=2000)
+
+
+class TaskCreationRequest(AssistantQuestion):
+    request_id: uuid.UUID
+
+
+class AssistantTaskDraft(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    meeting_id: uuid.UUID
+    title: str = Field(min_length=1, max_length=500)
+    description: str = Field(max_length=4000)
+    assignee: str | None = Field(max_length=200)
+    due_date: date | None
+    due_text: str | None = Field(max_length=200)
+
+
+class TaskCreationPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["create", "clarify"]
+    answer: str = Field(max_length=3000)
+    tasks: list[AssistantTaskDraft] = Field(max_length=10)
+
+
+class CreatedTask(AssistantTaskDraft):
+    card_id: uuid.UUID
+    meeting_title: str
+    board_version: int
+
+
+class TaskCreationResult(BaseModel):
+    status: Literal["created", "clarification"]
+    answer: str
+    tasks: list[CreatedTask]
 
 
 class IndexStatus(BaseModel):
@@ -144,9 +177,34 @@ class CatalogCitation(BaseModel):
     quote: str
 
 
+class BoardSource(BaseModel):
+    source_id: str
+    kind: Literal["summary", "kanban"]
+    meeting_id: uuid.UUID
+    meeting_title: str
+    card_id: uuid.UUID | None
+    title: str
+    text: str
+    board_version: int
+    provisional: bool
+    transcript_current: bool
+    transcript_quote: str | None
+
+
+class BoardCitation(BaseModel):
+    kind: Literal["board"] = "board"
+    source_id: str
+    quote: str
+
+
+class BoardCoverage(BaseModel):
+    available_sources: int = 0
+    selected_sources: int = 0
+
+
 class WorkspaceClaim(BaseModel):
     text: str
-    citations: list[Citation | CatalogCitation]
+    citations: list[Citation | CatalogCitation | BoardCitation]
 
 
 class WorkspaceAnswer(BaseModel):
@@ -155,6 +213,8 @@ class WorkspaceAnswer(BaseModel):
     claims: list[WorkspaceClaim]
     sources: list[WorkspaceSource]
     catalog_sources: list[CatalogSource] = Field(default_factory=list)
+    board_sources: list[BoardSource] = Field(default_factory=list)
+    board_coverage: BoardCoverage = Field(default_factory=BoardCoverage)
     coverage: WorkspaceCoverage
 
 
@@ -179,3 +239,49 @@ class Graph(BaseModel):
     index_id: uuid.UUID
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+class GeneralChatResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["assistant"]
+    answer: str = Field(min_length=1, max_length=12000)
+
+
+class MeetingChatResult(WorkspaceAnswer):
+    mode: Literal["meetings"]
+
+
+class TaskChatResult(TaskCreationResult):
+    mode: Literal["tasks"]
+
+
+class ConversationCreate(BaseModel):
+    id: uuid.UUID
+
+
+class ConversationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationTurnInput(Question):
+    id: uuid.UUID
+    result: GeneralChatResult | MeetingChatResult | TaskChatResult = Field(discriminator="mode")
+
+    @field_validator("result")
+    @classmethod
+    def bounded_result(cls, value):
+        if len(value.model_dump_json()) > 300_000:
+            raise ValueError("Conversation result too large")
+        return value
+
+
+class ConversationTurnOutput(ConversationTurnInput):
+    created_at: datetime
+
+
+class ConversationDetail(ConversationSummary):
+    turns: list[ConversationTurnOutput]

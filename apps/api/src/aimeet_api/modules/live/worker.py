@@ -5,7 +5,7 @@ import logging
 import signal
 import time
 import uuid
-from datetime import timedelta
+from datetime import UTC, timedelta
 
 from sqlalchemy import and_, func, or_, select, update
 
@@ -13,8 +13,10 @@ from aimeet_api.core.config import Settings
 from aimeet_api.db.models import Meeting, utcnow
 from aimeet_api.db.session import create_engine_and_session
 from aimeet_api.modules.live.analysis import generate_insights
+from aimeet_api.modules.live.archive import sync_archived_board
 from aimeet_api.modules.live.audio import chunk_path
-from aimeet_api.modules.live.models import LiveChunk, LiveParticipant, LiveRoom
+from aimeet_api.modules.live.models import LiveChunk, LiveParticipant, LiveRecordingStream, LiveRoom
+from aimeet_api.modules.live.recordings import process_recording_once
 from aimeet_api.modules.live.security import media_room_request
 from aimeet_api.modules.rag.providers import RagError
 from aimeet_api.modules.transcription.engine import model_metadata
@@ -106,7 +108,9 @@ def process_audio(factory, settings, chunk, model):
                 .values(transcript_revision=LiveRoom.transcript_revision + 1, audio_error=error)
             )
         db.commit()
-    if changed.rowcount == 1:
+    # Retain original speech for cited playback; it is removed with the meeting.
+    # Failed/non-speech chunks have no corresponding transcript excerpt.
+    if changed.rowcount == 1 and (error or not text):
         path.unlink(missing_ok=True)
 
 
@@ -195,7 +199,7 @@ def process_analysis(factory, settings, claim, generator=generate_insights):
         }
         if insights is not None:
             values.update(insights=insights, analysis_through=revision)
-        db.execute(
+        published = db.execute(
             update(LiveRoom)
             .where(
                 LiveRoom.id == room_id,
@@ -204,6 +208,8 @@ def process_analysis(factory, settings, claim, generator=generate_insights):
             )
             .values(**values)
         )
+        if published.rowcount == 1:
+            sync_archived_board(db, db.get(LiveRoom, room_id))
         db.commit()
 
 
@@ -230,6 +236,17 @@ def finalize_rooms(factory, settings):
             .with_for_update(skip_locked=True)
         ).all()
         for room in rooms:
+            streams = list(
+                db.scalars(
+                    select(LiveRecordingStream).where(
+                        LiveRecordingStream.room_id == room.id,
+                    )
+                )
+            )
+            if any(stream.closed_at is None for stream in streams) and (
+                room.ended_at.replace(tzinfo=UTC) > utcnow() - timedelta(seconds=10)
+            ):
+                continue
             pending = db.scalar(
                 select(func.count())
                 .select_from(LiveChunk)
@@ -249,7 +266,7 @@ def finalize_rooms(factory, settings):
                 f"[{int(c.start) // 60:02}:{int(c.start) % 60:02}] {name}: {c.text}"
                 for c, name in rows
             )
-            if transcript and room.meeting_id is None:
+            if (transcript or streams) and room.meeting_id is None:
                 meeting = Meeting(
                     workspace_id=room.workspace_id,
                     created_by=room.created_by,
@@ -268,6 +285,9 @@ def finalize_rooms(factory, settings):
                 db.flush()
                 room.meeting_id = meeting.id
             room.status = "ended"
+            if streams and room.recording_status != "failed":
+                room.recording_status = "queued"
+            sync_archived_board(db, room)
         db.commit()
 
 
@@ -313,6 +333,7 @@ def main():
                 # This process has media-service access; the speech worker stays on the
                 # internal data network so audio cannot leave through an external API.
                 finalize_rooms(factory, settings)
+                process_recording_once(factory, settings)
                 claim = claim_analysis(factory, settings)
                 if claim:
                     process_analysis(factory, settings, claim)

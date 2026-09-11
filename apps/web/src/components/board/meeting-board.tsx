@@ -1,11 +1,15 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { DndContext, DragOverlay, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
+import { BoardColumn, DraggableCard } from './board-dnd'
+import { boardCollision, boardKeyboardCoordinates } from './board-dnd-geometry'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Alert, Avatar, Badge, Button, Checkbox, Flex, Menu, Modal, Progress, SegmentedControl, Select, Text, Textarea, TextInput, Title } from '@mantine/core'
-import { Archive, CalendarDays, Download, GripVertical, Plus, Search, Sparkles } from 'lucide-react'
+import { Alert, Avatar, Badge, Button, Checkbox, Flex, Menu, Modal, Popover, Progress, SegmentedControl, Select, Text, Textarea, TextInput, Title } from '@mantine/core'
+import { Archive, CalendarDays, Download, Plus, Search, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { ApiError } from '../../lib/api'
-import { boardApi, boardError, cardInputSchema, emptyCard, agreements, clarificationLabels, kinds, overdue, priorities, statuses, type Card, type CardInput, type Evidence } from '../../lib/board'
+import { boardApi, boardError, cardInputSchema, emptyCard, agreements, clarificationLabels, kinds, overdue, priorities, statuses, type Board, type Card, type CardInput, type Evidence } from '../../lib/board'
 import type { MeetingDetail } from '../../lib/contracts'
 import { EvidenceButton, MeetingEvidence } from './meeting-evidence'
 import { Disclosure } from '../ui'
@@ -20,7 +24,8 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
   const key = ['board', meetingId]
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => boardApi.get(meetingId, signal),
     refetchInterval: (q) => ['queued', 'running'].includes(q.state.data?.status ?? '') ? 2000 : false })
-  const [view, setView] = useState('tasks')
+  const [selectedView, setView] = useState<string | null>(null)
+  const [columnOrder, setColumnOrder] = useState<Card['kind'][] | null>(null)
   const [search, setSearch] = useState('')
   const [assignee, setAssignee] = useState<string | null>(null)
   const [priority, setPriority] = useState<string | null>(null)
@@ -31,19 +36,32 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
   const [lateOnly, setLateOnly] = useState(false)
   const [showArchive, setShowArchive] = useState(false)
   const [editing, setEditing] = useState<{ card?: Card; version: number } | null>(null)
-  const [dragged, setDragged] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [dragged, setDragged] = useState<Card | null>(null)
+  const dragStart = useRef<{ version: number; view: string } | null>(null)
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(KeyboardSensor, { coordinateGetter: boardKeyboardCoordinates }))
   const generation = useMutation({ mutationFn: () => boardApi.generate(meetingId), onSuccess: (data) => cache.setQueryData(key, data) })
   const save = useMutation({
-    mutationFn: ({ card, changes }: { card: Card; changes: Partial<CardInput> }) => boardApi.save(
-      meetingId, query.data!.version, { ...cardInputSchema.parse(card), ...changes }, card.id),
+    mutationFn: ({ card, changes, version }: { card: Card; changes: Partial<CardInput>; version?: number }) => boardApi.save(
+      meetingId, version ?? query.data!.version, { ...cardInputSchema.parse(card), ...changes }, card.id),
+    onMutate: async ({ card, changes }) => {
+      await cache.cancelQueries({ queryKey: key })
+      const previous = cache.getQueryData<Board>(key)
+      if (previous) cache.setQueryData<Board>(key, { ...previous, cards: previous.cards.map((item) => item.id === card.id ? { ...item, ...changes } : item) })
+      return { previous }
+    },
     onSuccess: (data) => cache.setQueryData(key, data),
-    onError: () => { void query.refetch() },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) cache.setQueryData(key, context.previous)
+      void cache.invalidateQueries({ queryKey: key })
+    },
   })
   const download = useMutation({ mutationFn: (format: 'csv' | 'json' | 'ics') => boardApi.download(meetingId, format) })
   const board = query.data
   const busy = generation.isPending || ['queued', 'running'].includes(board?.status ?? '')
   const cards = board?.cards ?? []
+  const view = selectedView ?? (embedded && !cards.some((card) => card.kind === 'task') ? 'content' : 'tasks')
+  const contentKinds = columnOrder ?? (embedded ? [...kindKeys].sort((a, b) =>
+    Number(cards.some((card) => card.kind === b && card.status !== 'dismissed')) - Number(cards.some((card) => card.kind === a && card.status !== 'dismissed'))) : [...kindKeys])
   const activeTasks = cards.filter((c) => c.kind === 'task' && c.status !== 'dismissed')
   const completed = activeTasks.filter((c) => c.status === 'done').length
   const unresolved = cards.filter((c) => c.status !== 'dismissed' && c.clarifications.length > 0)
@@ -52,6 +70,20 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
     && (!assignee || (assignee === '__none' ? !card.assignee : card.assignee === assignee))
     && (!priority || card.priority === priority) && (!needsReview || !card.reviewed) && (!lateOnly || overdue(card))
     && (!needsClarification || card.clarifications.length > 0))
+  function drop(event: DragEndEvent) {
+    const start = dragStart.current
+    dragStart.current = null
+    setDragged(null)
+    if (!event.over || !start || start.view !== view || save.isPending || showArchive) return
+    const card = cards.find((item) => item.id === event.active.id)
+    const column = String(event.over.id).replace('column:', '')
+    if (!card || !(view === 'tasks' ? [...taskStatuses] as string[] : [...kindKeys]).includes(column)) return
+    const changes: Partial<CardInput> = view === 'tasks'
+      ? { status: column as Card['status'] }
+      : { kind: column as Card['kind'] }
+    if (view === 'tasks' ? card.status === column : card.kind === column) return
+    save.mutate({ card, changes, version: start.version })
+  }
   function move(card: Card, status: Card['status']) { if (!save.isPending && card.status !== status) save.mutate({ card, changes: { status } }) }
   const canExportCalendar = cards.some((c) => c.kind === 'task' && c.reviewed && c.agreement === 'confirmed' && c.due_date && !['done', 'dismissed'].includes(c.status))
   const hasFilters = !!(search || assignee || priority || needsReview || lateOnly || needsClarification)
@@ -68,19 +100,47 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
     setShowArchive(false); setNeedsReview(false); setNeedsClarification(true)
   }
   return <section className={`meeting-board transcript-panel ${embedded ? 'embedded-board' : ''}`} aria-labelledby="meeting-board-title">
-    <header className="board-heading">
-      <div className={embedded ? 'board-heading-hidden' : undefined}><Title order={2} id="meeting-board-title" size="h2">{embedded ? 'Канбан встречи' : 'Итоги встречи'}</Title>
-        <Text c="dimmed" size="sm">Поручения и договорённости из обсуждения</Text></div>
-      <div className="board-actions no-print">
-        <Button variant="default" leftSection={<Plus size={16} />} disabled={!board || query.isError} onClick={() => setEditing({ version: board!.version })}>Добавить карточку</Button>
-        {board && board.status !== 'ready' && <Button leftSection={<Sparkles size={16} />} loading={busy}
-          disabled={!canGenerate || query.isError} onClick={() => generation.mutate()}>{busy ? 'Разбираем встречу…' : board.status === 'failed' ? 'Повторить разбор' : 'Разобрать встречу'}</Button>}
-      </div>
+    <header className={embedded ? 'board-heading-hidden' : 'board-heading'}>
+      <Title order={2} id="meeting-board-title" size="h2">{embedded ? 'Канбан встречи' : 'Итоги встречи'}</Title>
     </header>
+    <div className="board-toolbar no-print" role="group" aria-label="Управление канбаном">
+      {embedded ? <Select className="board-grouping" size="sm" aria-label="Группировка карточек" value={view} disabled={!!dragged || save.isPending}
+        onChange={(value) => { if (value) { setView(value); setColumnOrder(null) } }} data={[{ value: 'tasks', label: 'По статусам поручений' }, { value: 'content', label: 'По содержанию встречи' }]} />
+        : <SegmentedControl size="xs" value={view} onChange={setView} disabled={!!dragged || save.isPending} aria-label="Представление итогов" data={[
+          { value: 'tasks', label: 'Поручения' }, { value: 'content', label: 'По содержанию' }, { value: 'summary', label: 'Выжимка' },
+        ]} />}
+      <TextInput className="board-search" size="sm" aria-label="Поиск по карточкам" placeholder="Найти карточку" leftSection={<Search size={15} />} value={search} disabled={!!dragged} onChange={(e) => setSearch(e.currentTarget.value)} />
+      <Popover position="bottom-end" width={290} trapFocus returnFocus withinPortal>
+        <Popover.Target><Button size="sm" variant="default" disabled={!!dragged} leftSection={<SlidersHorizontal size={15} />}>Фильтры{hasFilters || showArchive ? ' •' : ''}</Button></Popover.Target>
+        <Popover.Dropdown className="board-filter-popover"><div className="board-filter-fields">
+          <Select size="sm" comboboxProps={{ withinPortal: false }} label="Ответственный" placeholder="Все ответственные" clearable searchable value={assignee} onChange={setAssignee}
+            data={[{ value: '__none', label: 'Без ответственного' }, ...Array.from(new Set(cards.flatMap((c) => c.assignee ? [c.assignee] : []))).map((name) => ({ value: name, label: name }))]} />
+          <Select size="sm" comboboxProps={{ withinPortal: false }} label="Приоритет" placeholder="Все приоритеты" clearable value={priority} onChange={setPriority} data={options(priorities)} />
+          <Checkbox label="Нужно проверить" checked={needsReview} onChange={(e) => setNeedsReview(e.currentTarget.checked)} />
+          <Checkbox label="Есть уточнения" checked={needsClarification} onChange={(e) => setNeedsClarification(e.currentTarget.checked)} />
+          <Checkbox label="Просрочено" checked={lateOnly} onChange={(e) => setLateOnly(e.currentTarget.checked)} />
+          <Checkbox label="Архив" checked={showArchive} onChange={(e) => setShowArchive(e.currentTarget.checked)} />
+          <Button size="sm" variant="default" disabled={!hasFilters && !showArchive} onClick={() => { setSearch(''); setAssignee(null); setPriority(null); setNeedsReview(false); setLateOnly(false); setNeedsClarification(false); setShowArchive(false) }}>Сбросить фильтры</Button>
+        </div></Popover.Dropdown>
+      </Popover>
+      <Button size="sm" variant="default" leftSection={<Plus size={15} />} disabled={!board || query.isError || save.isPending || !!dragged} onClick={() => setEditing({ version: board!.version })}>Добавить карточку</Button>
+      {board && (embedded ? board.status === 'failed' : board.status !== 'ready') && <Button size="sm" leftSection={<Sparkles size={15} />} loading={busy}
+        disabled={!canGenerate || query.isError || !!dragged} onClick={() => generation.mutate()}>{busy ? 'Разбираем…' : board.status === 'failed' ? 'Повторить разбор' : 'Разобрать встречу'}</Button>}
+        <Menu position="bottom-end" withinPortal><Menu.Target>
+          <Button size="sm" variant="default" leftSection={<Download size={16} />} disabled={query.isError || download.isPending || (!cards.length && !board?.summary.length)}>Экспорт</Button>
+        </Menu.Target><Menu.Dropdown>
+          <Menu.Label>Вся доска, без фильтров</Menu.Label>
+          <Menu.Item disabled={download.isPending} onClick={() => requestExport('csv')}>Скачать CSV</Menu.Item>
+          <Menu.Item disabled={download.isPending} onClick={() => requestExport('json')}>Скачать JSON</Menu.Item>
+          <Menu.Item onClick={() => requestExport('pdf')}>Печать / PDF</Menu.Item>
+          <Menu.Divider /><Menu.Label>Подтверждённые поручения с датой</Menu.Label>
+          <Menu.Item disabled={download.isPending || !canExportCalendar} onClick={() => download.mutate('ics')}>Календарь .ics</Menu.Item>
+        </Menu.Dropdown></Menu>
+    </div>
     {query.isPending && <Text role="status">Загружаем итоги встречи…</Text>}
     {query.isError && <Alert color="red" role="alert">{boardError(query.error)} <Button variant="subtle" onClick={() => void query.refetch()}>Повторить загрузку</Button></Alert>}
     {!query.isError && board && <>
-      {board.status === 'idle' && !cards.length && <div className="board-intro no-print">
+      {!embedded && board.status === 'idle' && !cards.length && <div className="board-intro no-print">
         <Sparkles size={24} aria-hidden="true" /><div><Text fw={600}>Стенограмма станет рабочей доской</Text>
           <Text size="sm" c="dimmed">Разберите встречу локальной моделью или добавьте карточки вручную. Неозвученные исполнители и сроки останутся пустыми.</Text>
           {!canGenerate && <Text size="sm">Автоматический разбор станет доступен после подготовки стенограммы.</Text>}</div></div>}
@@ -96,55 +156,34 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
         <Text size="sm">В карточках остались вопросы: {unresolved.length}</Text>
         <Button variant="subtle" size="compact-sm" onClick={showClarifications}>Перейти к уточнениям</Button>
       </div>}
-      <div className="board-tools no-print">
-        {embedded ? <Select aria-label="Группировка карточек" value={view} onChange={(value) => { if (value) setView(value) }} data={[{ value: 'tasks', label: 'По статусам поручений' }, { value: 'content', label: 'По содержанию встречи' }]} /> : <SegmentedControl value={view} onChange={setView} aria-label="Представление итогов" data={[
-          { value: 'tasks', label: 'Канбан поручений' }, { value: 'content', label: 'По содержанию' }, { value: 'summary', label: 'Выжимка' },
-        ]} />}
-        <Menu position="bottom-end" withinPortal><Menu.Target>
-          <Button variant="default" leftSection={<Download size={16} />} disabled={!cards.length && !board.summary.length}>Экспорт</Button>
-        </Menu.Target><Menu.Dropdown>
-          <Menu.Label>Вся доска, без фильтров</Menu.Label>
-          <Menu.Item disabled={download.isPending} onClick={() => requestExport('csv')}>Скачать CSV</Menu.Item>
-          <Menu.Item disabled={download.isPending} onClick={() => requestExport('json')}>Скачать JSON</Menu.Item>
-          <Menu.Item onClick={() => requestExport('pdf')}>Печать / PDF</Menu.Item>
-          <Menu.Divider /><Menu.Label>Подтверждённые поручения с датой</Menu.Label>
-          <Menu.Item disabled={download.isPending || !canExportCalendar} onClick={() => download.mutate('ics')}>Календарь .ics</Menu.Item>
-        </Menu.Dropdown></Menu>
-      </div>
       {download.isError && <Alert color="red" role="alert">{boardError(download.error)}</Alert>}
-      {view !== 'summary' && <div className="board-filters no-print">
-        <TextInput aria-label="Поиск по карточкам" placeholder="Найти карточку" leftSection={<Search size={16} />} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
-        <Select aria-label="Фильтр по ответственному" placeholder="Все ответственные" clearable searchable value={assignee} onChange={setAssignee}
-          data={[{ value: '__none', label: 'Без ответственного' }, ...Array.from(new Set(cards.flatMap((c) => c.assignee ? [c.assignee] : []))).map((name) => ({ value: name, label: name }))]} />
-        <Disclosure label="Ещё фильтры" className="board-more-filters"><div className="board-filter-options">
-        <Select aria-label="Фильтр по приоритету" placeholder="Все приоритеты" clearable value={priority} onChange={setPriority} data={options(priorities)} />
-        <Checkbox label="Нужно проверить" checked={needsReview} onChange={(e) => setNeedsReview(e.currentTarget.checked)} />
-        <Checkbox label="Есть уточнения" checked={needsClarification} onChange={(e) => setNeedsClarification(e.currentTarget.checked)} />
-        <Checkbox label="Просрочено" checked={lateOnly} onChange={(e) => setLateOnly(e.currentTarget.checked)} />
-        <Checkbox label="Архив" checked={showArchive} onChange={(e) => setShowArchive(e.currentTarget.checked)} />
-        </div></Disclosure>
-        {hasFilters && <Button variant="subtle" size="compact-sm" onClick={() => { setSearch(''); setAssignee(null); setPriority(null); setNeedsReview(false); setLateOnly(false); setNeedsClarification(false) }}>Сбросить фильтры</Button>}
-      </div>}
+      {save.isPending && <Text size="xs" c="dimmed" role="status">Сохраняем карточку…</Text>}
       {view === 'summary' ? <div className="board-summary screen-only">
         <Title order={3} size="h4">Кратко о встрече</Title>
         {!board.summary.length ? <Text c="dimmed">Выжимка появится после разбора содержательной стенограммы.</Text> : board.summary.map((sentence, i) => <div key={i}><Text>{sentence.text}</Text><Disclosure label={`Основание ${i + 1}`}><blockquote>{sentence.quote}</blockquote>{sentence.evidence && <EvidenceButton evidence={sentence.evidence} onOpen={setEvidence} />}</Disclosure></div>)}
       </div> : <>
-        {view === 'tasks' && <Text size="xs" c="dimmed" className="no-print">Перетащите поручение в другую колонку или выберите статус в карточке.</Text>}
+        {!showArchive && <Text size="xs" c="dimmed" className="no-print">{view === 'tasks' ? 'Перенос за ручку меняет статус поручения.' : 'Перенос за ручку меняет тип карточки.'}</Text>}
+        <DndContext id={`board-dnd-${meetingId}`} sensors={sensors} collisionDetection={boardCollision}
+          onDragStart={({ active }) => { const card = cards.find((c) => c.id === active.id); if (card && board) { setView(view); setColumnOrder(contentKinds); setDragged(card); dragStart.current = { view, version: board.version }; save.reset() } }}
+          onDragCancel={() => { setDragged(null); dragStart.current = null }} onDragEnd={drop}
+          accessibility={{ screenReaderInstructions: { draggable: 'Нажмите пробел, чтобы поднять карточку. Стрелками выберите колонку. Пробел — переместить, Escape — отменить.' }, announcements: {
+            onDragStart: ({ active }) => `Выбрана карточка «${active.data.current?.title}». Стрелками выберите колонку.`,
+            onDragOver: ({ over }) => over ? `Колонка «${over.data.current?.label}».` : 'За пределами колонок.',
+            onDragEnd: ({ over }) => over ? `Карточка отпущена в колонке «${over.data.current?.label}».` : 'Перенос отменён.',
+            onDragCancel: () => 'Перенос отменён.',
+          } }}>
         <div className={`kanban-grid screen-only ${view === 'content' ? 'content-grid' : ''}`}>
-          {(showArchive ? ['dismissed'] : view === 'tasks' ? [...taskStatuses] : [...kindKeys]).map((column) => {
+          {(showArchive ? ['dismissed'] : view === 'tasks' ? [...taskStatuses] : contentKinds).map((column, index) => {
             const rows = visible.filter((c) => showArchive ? (view === 'content' || c.kind === 'task') : view === 'tasks' ? c.kind === 'task' && c.status === column : c.kind === column)
             const label = showArchive ? 'Архив карточек' : view === 'tasks' ? statuses[column as Card['status']] : kinds[column as Card['kind']]
-            return <section key={column} className={`kanban-column column-${column} ${dropTarget === column ? 'drop-target' : ''}`} aria-label={label}
-              onDragOver={(e) => { if (view === 'tasks' && dragged) { e.preventDefault(); setDropTarget(column) } }}
-              onDragLeave={() => setDropTarget(null)}
-              onDrop={(e) => { e.preventDefault(); setDropTarget(null); const card = cards.find((c) => c.id === dragged); if (card && view === 'tasks') move(card, column as Card['status']); setDragged(null) }}>
+            return <BoardColumn key={column} id={`column:${column}`} index={index} label={label} className={`kanban-column column-${column}`} disabled={save.isPending || showArchive}>
               <header><span className="column-dot" /><Title order={3} size="sm">{label}</Title><span className="column-count">{rows.length}</span></header>
               {!rows.length && <div className="column-empty">{hasFilters ? 'Нет совпадений' : 'Пока нет карточек'}</div>}
-              {rows.map((card) => <article className="kanban-card" key={card.id} draggable={view === 'tasks' && !save.isPending}
-                onDragStart={(e) => { e.dataTransfer.setData('text/plain', card.id); setDragged(card.id) }} onDragEnd={() => { setDragged(null); setDropTarget(null) }}>
+              {rows.map((card) => <DraggableCard key={card.id} card={card} columnId={`column:${column}`} disabled={save.isPending || showArchive}>
+                {(handle) => <>
                 <div className="card-badges">{card.priority !== 'unspecified' && <Badge variant="light" color={card.priority === 'high' ? 'red' : 'gray'} size="sm">{priorities[card.priority]}</Badge>}
                   {['task', 'decision'].includes(card.kind) && <Badge variant="light" color={card.agreement === 'confirmed' ? 'forest' : 'orange'} c={card.agreement === 'confirmed' ? undefined : '#8a3511'} size="sm">{agreements[card.agreement]}</Badge>}
-                  {view === 'tasks' && <GripVertical size={15} className="card-grip" aria-hidden="true" />}</div>
+                  {!showArchive && handle}</div>
                 <button className="card-title" onClick={() => { save.reset(); setEditing({ card, version: board.version }) }}>{card.title}</button>
                 {card.description && <Text size="sm" c="dimmed" className="card-description">{card.description}</Text>}
                 <div className="card-meta"><span className="card-person"><Avatar size={30} radius="xl" color="forest" aria-hidden="true">{card.assignee?.slice(0, 1).toLocaleUpperCase() || '?'}</Avatar>{card.assignee || 'Ответственный не указан'}</span>
@@ -158,10 +197,12 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded 
                 <Flex gap="xs" wrap="wrap"><Button variant="subtle" size="compact-xs" onClick={() => setEditing({ card, version: board.version })}>Открыть</Button>
                   {!card.reviewed && <Button variant="subtle" size="compact-xs" disabled={save.isPending} onClick={() => save.mutate({ card, changes: { reviewed: true } })}>Проверено</Button>}
                   {card.status !== 'dismissed' && <Button variant="subtle" color="gray" size="compact-xs" aria-label={`В архив: ${card.title}`} disabled={save.isPending} onClick={() => move(card, 'dismissed')}><Archive size={13} /></Button>}</Flex>
-              </article>)}
-            </section>
+              </>}</DraggableCard>)}
+            </BoardColumn>
           })}
         </div>
+        {createPortal(<DragOverlay dropAnimation={null}>{dragged && <div className="kanban-drag-preview" aria-hidden="true"><strong>{dragged.title}</strong><span>{dragged.assignee || 'Ответственный не указан'}</span></div>}</DragOverlay>, document.body)}
+        </DndContext>
       </>}
       <div className="board-print"><h1>{title}</h1><h2>Итоги встречи</h2>
         {board.summary.map((s, i) => <p key={i}>{s.text}</p>)}

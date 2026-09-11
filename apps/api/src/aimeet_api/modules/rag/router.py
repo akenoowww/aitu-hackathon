@@ -7,7 +7,14 @@ from sqlalchemy import select
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.modules.meetings.repository import MeetingRepository
 from aimeet_api.modules.rag.assistant import decide_reply
+from aimeet_api.modules.rag.assistant_tasks import create_tasks
 from aimeet_api.modules.rag.chunking import embedding_profile, source_hash
+from aimeet_api.modules.rag.conversations import (
+    create_conversation,
+    list_conversations,
+    read_conversation,
+    save_turn,
+)
 from aimeet_api.modules.rag.indexing import enqueue
 from aimeet_api.modules.rag.models import RagEdge, RagIndex, RagNode
 from aimeet_api.modules.rag.providers import Providers, RagError
@@ -16,6 +23,11 @@ from aimeet_api.modules.rag.schemas import (
     Answer,
     AssistantDecision,
     AssistantQuestion,
+    ConversationCreate,
+    ConversationDetail,
+    ConversationSummary,
+    ConversationTurnInput,
+    ConversationTurnOutput,
     Graph,
     GraphEdge,
     GraphNode,
@@ -23,6 +35,8 @@ from aimeet_api.modules.rag.schemas import (
     Question,
     RagConfiguration,
     SearchResult,
+    TaskCreationRequest,
+    TaskCreationResult,
     WorkspaceAnswer,
     WorkspaceCoverage,
 )
@@ -51,6 +65,58 @@ def assistant_chat(
     # The general conversation path never loads meetings or calls embeddings.
     db.rollback()
     return decide_reply(payload, providers)
+
+
+@router.post(
+    "/assistant/tasks",
+    response_model=TaskCreationResult,
+    dependencies=[Depends(require_csrf)],
+    operation_id="createAssistantTasks",
+)
+def assistant_tasks(
+    payload: TaskCreationRequest, user: CurrentUser, db: DatabaseDep, providers: ProviderDep
+):
+    return create_tasks(db, user, payload, providers)
+
+
+@router.get(
+    "/assistant/conversations",
+    response_model=list[ConversationSummary],
+    operation_id="listAssistantConversations",
+)
+def conversation_list(user: CurrentUser, db: DatabaseDep):
+    return list_conversations(db, user)
+
+
+@router.post(
+    "/assistant/conversations",
+    response_model=ConversationSummary,
+    dependencies=[Depends(require_csrf)],
+    operation_id="createAssistantConversation",
+)
+def conversation_create(payload: ConversationCreate, user: CurrentUser, db: DatabaseDep):
+    return create_conversation(db, user, payload.id)
+
+
+@router.get(
+    "/assistant/conversations/{conversation_id}",
+    response_model=ConversationDetail,
+    operation_id="getAssistantConversation",
+)
+def conversation_detail(conversation_id: uuid.UUID, user: CurrentUser, db: DatabaseDep):
+    return read_conversation(db, user, conversation_id)
+
+
+@router.post(
+    "/assistant/conversations/{conversation_id}/turns",
+    response_model=ConversationTurnOutput,
+    dependencies=[Depends(require_csrf)],
+    operation_id="saveAssistantTurn",
+)
+def conversation_save_turn(
+    conversation_id: uuid.UUID, payload: ConversationTurnInput, user: CurrentUser, db: DatabaseDep
+):
+    return save_turn(db, user, conversation_id, payload)
 
 
 def get_meeting(db, user, meeting_id):
