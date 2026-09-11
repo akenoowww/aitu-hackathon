@@ -46,10 +46,15 @@ export function consumeAutoJoin(id: string) {
   return value
 }
 export class RoomAccessError extends Error {}
-async function memberRequest<T>(grant: LiveGrant, suffix: string, schema: z.ZodType<T>, method = 'GET'): Promise<T> {
+export function transcriptRetryDelay(error: unknown, failures: number): number | false {
+  if (error instanceof RoomAccessError) return false
+  if (error instanceof ApiError && error.status < 500 && ![408, 429].includes(error.status)) return false
+  return Math.min(30000, 5000 * 2 ** Math.min(3, Math.max(0, failures - 1)))
+}
+async function memberRequest<T>(grant: LiveGrant, suffix: string, schema: z.ZodType<T>, method = 'GET', signal?: AbortSignal): Promise<T> {
   try {
     return await request(`/live/rooms/${grant.room_id}${suffix}`, schema, {
-      method, headers: { Authorization: `Bearer ${grant.member_token}` },
+      method, signal, headers: { Authorization: `Bearer ${grant.member_token}` },
     })
   } catch (error) {
     // A room grant expiring must not log the account out of the unrelated archive.
@@ -68,7 +73,7 @@ export const liveApi = {
   invite: (grant: LiveGrant) => memberRequest(grant, '/invite', z.object({ invite: z.string() })),
   end: (grant: LiveGrant) => memberRequest(grant, '/end', z.object({ status: z.string() }), 'POST'),
   retryAnalysis: (grant: LiveGrant) => memberRequest(grant, '/analysis/retry', z.object({ status: z.string() }), 'POST'),
-  transcript: (grant: LiveGrant, offset: number) => memberRequest(grant, `/transcript?offset=${offset}`, z.array(utteranceSchema)),
+  transcript: (grant: LiveGrant, offset: number, signal?: AbortSignal) => memberRequest(grant, `/transcript?offset=${offset}`, z.array(utteranceSchema), 'GET', signal),
 }
 export function liveError(error: unknown) {
   if (error instanceof RoomAccessError) return 'Доступ к комнате истёк. Откройте приглашение и войдите снова.'

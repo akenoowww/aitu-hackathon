@@ -8,7 +8,7 @@ import httpx
 from pydantic import ValidationError
 
 from aimeet_api.core.config import Settings
-from aimeet_api.modules.rag.schemas import GeneratedAnswer
+from aimeet_api.modules.rag.schemas import AssistantDecision, GeneratedAnswer
 
 
 class RagError(Exception):
@@ -40,8 +40,10 @@ class Providers:
         self.config = settings
         self.transport = transport
 
-    def ensure_configured(self, *, generation: bool = False):
-        kinds = [self.config.rag_embedding_provider]
+    def ensure_configured(self, *, generation: bool = False, generation_only: bool = False):
+        kinds = [
+            self.config.rag_llm_provider if generation_only else self.config.rag_embedding_provider
+        ]
         if generation:
             kinds.append(self.config.rag_llm_provider)
         if "openai" in kinds and not self.config.openai_api_key.get_secret_value():
@@ -141,10 +143,21 @@ class Providers:
         except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
             raise RagError("INVALID_MODEL_RESPONSE", 502) from exc
 
-    def _generate(self, instructions: str, context: str) -> GeneratedAnswer:
+    def decide(self, instructions: str, context: str) -> AssistantDecision:
+        try:
+            result = self._generate(instructions, context, response_model=AssistantDecision)
+        except (KeyError, TypeError, AttributeError, IndexError, ValueError) as exc:
+            raise RagError("INVALID_MODEL_RESPONSE", 502) from exc
+        if result.action == "reply" and not result.answer.strip():
+            raise RagError("INVALID_MODEL_RESPONSE", 502)
+        if result.action == "search_meetings" and not result.search_query.strip():
+            raise RagError("INVALID_MODEL_RESPONSE", 502)
+        return result
+
+    def _generate(self, instructions: str, context: str, response_model=GeneratedAnswer):
         config = self.config
         provider = config.rag_llm_provider
-        schema = GeneratedAnswer.model_json_schema()
+        schema = response_model.model_json_schema()
         messages = [
             {"role": "system", "content": instructions},
             {"role": "user", "content": context},
@@ -225,6 +238,6 @@ class Providers:
                 raise RagError("INCOMPLETE_MODEL_RESPONSE", 502)
             raw = choices[0].get("message", {}).get("content", "")
         try:
-            return GeneratedAnswer.model_validate_json(raw)
+            return response_model.model_validate_json(raw)
         except (ValidationError, TypeError) as exc:
             raise RagError("INVALID_MODEL_RESPONSE", 502) from exc

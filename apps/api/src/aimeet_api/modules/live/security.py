@@ -52,7 +52,9 @@ def media_jwt(settings: Settings, participant: LiveParticipant) -> str:
                 "canPublish": True,
                 "canPublishSources": ["microphone"],
                 "canSubscribe": True,
-                "canPublishData": False,
+                # The SDK opens transport/control data channels even for a voice-only room.
+                # Application state and insights never trust participant data-channel payloads.
+                "canPublishData": True,
                 "canUpdateOwnMetadata": False,
             },
         },

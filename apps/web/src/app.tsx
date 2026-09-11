@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Link, Navigate, Outlet } from '@tanstack/react-router'
 import { WorkspaceShell } from './components/shell'
 import { ErrorState } from './components/ui'
-import { meetingSearchSchema } from './lib/contracts'
+import { meetingSearchSchema, meetingViewSearchSchema } from './lib/contracts'
 import { liveSearch } from './lib/live'
 import { Button } from '@mantine/core'
 
@@ -15,7 +15,7 @@ const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login'
 const workspaceRoute = createRoute({ getParentRoute: () => rootRoute, id: '_workspace', component: WorkspaceShell })
 const meetingsRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/meetings', validateSearch: (search) => meetingSearchSchema.parse(search), component: lazyRouteComponent(() => import('./routes/meetings'), 'MeetingsPage') })
 const newMeetingRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/meetings/new', component: lazyRouteComponent(() => import('./routes/new-meeting'), 'NewMeetingPage') })
-const meetingRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/meetings/$meetingId', component: lazyRouteComponent(() => import('./routes/meeting-detail'), 'MeetingDetailPage') })
+const meetingRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/meetings/$meetingId', validateSearch: (search) => meetingViewSearchSchema.parse(search), component: lazyRouteComponent(() => import('./routes/meeting-detail'), 'MeetingDetailPage') })
 const liveRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/live', component: lazyRouteComponent(() => import('./routes/live'), 'LivePage') })
 const liveRoomRoute = createRoute({ getParentRoute: () => rootRoute, path: '/live/$roomId', validateSearch: (search) => liveSearch.parse(search), component: lazyRouteComponent(() => import('./routes/live-room'), 'LiveRoomPage') })
 const chatRoute = createRoute({ getParentRoute: () => workspaceRoute, path: '/chat', component: lazyRouteComponent(() => import('./routes/chat'), 'ChatPage') })

@@ -123,9 +123,12 @@ def claim_analysis(factory, settings):
                     LiveRoom.analysis_updated_at
                     < now - timedelta(seconds=settings.live_analysis_interval),
                 ),
-                or_(LiveRoom.analysis_error.is_(None), LiveRoom.analysis_error.not_in(
-                    ["OPENAI_KEY_REQUIRED", "PROVIDER_REJECTED", "CLOUD_DISABLED"]
-                )),
+                or_(
+                    LiveRoom.analysis_error.is_(None),
+                    LiveRoom.analysis_error.not_in(
+                        ["OPENAI_KEY_REQUIRED", "PROVIDER_REJECTED", "CLOUD_DISABLED"]
+                    ),
+                ),
             )
             .order_by(LiveRoom.created_at)
             .with_for_update(skip_locked=True)
@@ -186,6 +189,7 @@ def process_analysis(factory, settings, claim, generator=generate_insights):
             "analysis_status": "failed" if error else "ready",
             "analysis_error": error,
             "analysis_updated_at": utcnow(),
+            "analysis_through": revision,  # Retry soft failures only after new speech.
             "analysis_lease": None,
             "analysis_lease_until": None,
         }
@@ -304,9 +308,11 @@ def main():
                 if chunk:
                     process_audio(factory, settings, chunk, model)
                 else:
-                    finalize_rooms(factory, settings)
                     time.sleep(0.3)
             else:
+                # This process has media-service access; the speech worker stays on the
+                # internal data network so audio cannot leave through an external API.
+                finalize_rooms(factory, settings)
                 claim = claim_analysis(factory, settings)
                 if claim:
                     process_analysis(factory, settings, claim)

@@ -37,14 +37,16 @@ export function WorkspaceFrame({ children }: { children: ReactNode }) {
     mutationFn: api.logout,
     onSuccess: () => { queryClient.clear(); queryClient.setQueryData(['session'], null) },
   })
-  return <div className={`app-shell workspace-frame ${collapsed ? 'sidebar-collapsed' : ''} ${mobileExpanded ? 'sidebar-mobile-expanded' : ''} ${pathname.startsWith('/live/') ? 'workspace-live-room' : ''} ${pathname.startsWith('/meetings') ? 'workspace-meetings' : ''}`}>
+  return <div className={`app-shell workspace-frame ${collapsed ? 'sidebar-collapsed' : ''} ${mobileExpanded ? 'sidebar-mobile-expanded' : ''} ${/^\/live\/[^/]+/.test(pathname) ? 'workspace-live-room' : ''} ${/^\/live\/?$/.test(pathname) ? 'workspace-live-entry' : ''} ${pathname.startsWith('/meetings') ? 'workspace-meetings' : ''}`}>
     <Anchor className="skip-link" href="#main-content">К содержимому</Anchor>
     {mobile && mobileExpanded && <button type="button" className="sidebar-backdrop" aria-label="Закрыть навигацию" onClick={() => setMobileExpanded(false)} />}
     <aside className="sidebar">
-      <ActionIcon className="sidebar-toggle" variant="subtle" color="forest" size="lg" aria-label={collapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'} title={collapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'} aria-expanded={!collapsed} aria-controls="workspace-navigation" onClick={toggleSidebar}>
-        {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
-      </ActionIcon>
-      <Anchor underline="never" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} aria-label={`${brand.name} — все встречи`} />}><Brand /></Anchor>
+      <div className="sidebar-header">
+        <Anchor className="sidebar-brand" underline="never" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} aria-label={`${brand.name} — все встречи`} />}><Brand /></Anchor>
+        <ActionIcon className="sidebar-toggle" variant="subtle" color="forest" size="lg" aria-label={collapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'} title={collapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'} aria-expanded={!collapsed} aria-controls="workspace-navigation" onClick={toggleSidebar}>
+          {collapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+        </ActionIcon>
+      </div>
       <nav id="workspace-navigation" className="sidebar-nav" onClick={() => setMobileExpanded(false)} aria-label="Основная навигация">
         <NavLink active={pathname.startsWith('/meetings')} label="Встречи" aria-label="Встречи" title={collapsed ? 'Встречи' : undefined} leftSection={<CalendarDays size={21} aria-hidden="true" />} className="nav-link"
           renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} activeOptions={{ includeSearch: false }} />} />

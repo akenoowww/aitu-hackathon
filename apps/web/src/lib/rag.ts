@@ -49,11 +49,24 @@ const workspaceAnswerSchema = z.object({
 export type WorkspaceAnswer = z.infer<typeof workspaceAnswerSchema>
 export type WorkspaceCoverage = z.infer<typeof workspaceCoverageSchema>
 
-async function request<T>(path: string, schema: z.ZodType<T>, question?: string | null, signal?: AbortSignal): Promise<T> {
+export type ConversationMessage = { role: 'user' | 'assistant'; content: string }
+export type AssistantResult = { mode: 'assistant'; answer: string } | (WorkspaceAnswer & { mode: 'meetings' })
+const assistantDecisionSchema = z.object({
+  action: z.enum(['reply', 'search_meetings']), answer: z.string(), search_query: z.string(),
+}) satisfies z.ZodType<components['schemas']['AssistantDecision']>
+
+export async function talkToAssistant(question: string, history: ConversationMessage[], signal: AbortSignal): Promise<AssistantResult> {
+  const decision = await request('/assistant/chat', assistantDecisionSchema, { question, history }, signal)
+  if (decision.action === 'reply') return { mode: 'assistant', answer: decision.answer }
+  const result = await searchWorkspace(decision.search_query, signal, () => {})
+  return { ...result, mode: 'meetings' }
+}
+
+async function request<T>(path: string, schema: z.ZodType<T>, question?: string | { question: string; history: ConversationMessage[] } | null, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method: question === undefined ? 'GET' : 'POST', credentials: 'include', cache: 'no-store', signal,
     headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'aimeet' },
-    body: typeof question === 'string' ? JSON.stringify({ question }) : undefined,
+    body: typeof question === 'string' ? JSON.stringify({ question }) : question ? JSON.stringify(question) : undefined,
   })
   if (!response.ok) {
     let code = 'request'

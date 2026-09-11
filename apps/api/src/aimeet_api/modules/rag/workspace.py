@@ -67,7 +67,11 @@ def workspace_scope(db, workspace_id, settings):
     coverage = WorkspaceCoverage(total=len(meetings))
     current = []
     for meeting in meetings:
-        if not meeting.transcript.strip() or len(meeting.transcript) > 200_000:
+        if (
+            not meeting.transcript.strip()
+            or len(meeting.transcript) > 200_000
+            or (meeting.source_type == "audio" and meeting.status != "transcribed")
+        ):
             coverage.unavailable += 1
             continue
         index = by_source.get((meeting.id, source_hash(meeting.transcript)))

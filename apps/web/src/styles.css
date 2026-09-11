@@ -1019,30 +1019,36 @@
 .rag-source { margin: 8px 0; }
 .rag-source blockquote { white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0; border-left: 3px solid var(--mantine-color-forest-3); padding: 0 16px; }
 
-@layer layout {
+@layer responsive {
   .workspace-frame { transition: grid-template-columns 200ms ease; }
   .workspace-frame.sidebar-collapsed { --sidebar-width: 76px; }
-  .workspace-frame .sidebar { padding-top: 24px; gap: 0; }
-  .workspace-frame .sidebar > a { width: fit-content; margin: 12px 10px 40px; }
-  .sidebar-toggle { align-self: flex-end; flex-shrink: 0; }
-  .sidebar-collapsed .sidebar { padding-inline: 10px; }
-  .sidebar-collapsed .sidebar-toggle { align-self: center; }
-  .sidebar-collapsed .sidebar > a { margin: 12px auto 40px; }
+  .workspace-frame .sidebar { padding: 24px 16px; gap: 0; overflow-x: clip; }
+  .sidebar-header { display: flex; align-items: center; gap: 8px; height: 44px; min-height: 44px; margin-bottom: 32px; }
+  .sidebar-brand { min-width: 0; overflow: hidden; }
+  .sidebar-header .brand { gap: 7px; font-size: 27px; }
+  .sidebar-header .brand-mark { width: 34px; height: 34px; }
+  .sidebar-toggle { flex-shrink: 0; margin-left: auto; }
+  .sidebar-collapsed .sidebar-brand { display: none; }
+  .sidebar-collapsed .sidebar-header { justify-content: center; }
+  .sidebar-collapsed .sidebar-toggle { margin-left: 0; }
+  .workspace-frame .sidebar .nav-link { height: 48px; min-height: 48px; padding: 12px; justify-content: flex-start; }
+  .workspace-frame .sidebar .mantine-NavLink-section { flex-shrink: 0; }
+  .workspace-frame .account { min-height: 44px; }
+  .workspace-frame .account-info { overflow: hidden; white-space: nowrap; }
+  .workspace-frame .account-info > * { display: block; overflow: hidden; text-overflow: ellipsis; }
   .sidebar-collapsed .brand-name,
   .sidebar-collapsed .mantine-NavLink-body,
   .sidebar-collapsed .account-info,
   .sidebar-collapsed .signout .mantine-Button-label { display: none; }
-  .sidebar-collapsed .sidebar .nav-link { justify-content: center; padding-inline: 0; }
   .sidebar-collapsed .mantine-NavLink-section[data-position="left"],
   .sidebar-collapsed .signout .mantine-Button-section { margin: 0; }
   .sidebar-collapsed .sidebar-footer { padding-inline: 0; justify-items: center; }
-  .sidebar-collapsed .signout { padding-inline: 10px; }
+  .sidebar-collapsed .signout { width: 44px; padding-inline: 12px; }
   .workspace-live-room > .main-content { padding: 0; }
   .sidebar-backdrop { display: none; }
   @media (max-width: 760px) {
     .workspace-frame { display: grid; grid-template-columns: 64px minmax(0, 1fr); }
-    .workspace-frame .sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100dvh; padding: 16px 8px; border-right: 1px solid var(--line); border-bottom: 0; z-index: 30; }
-    .workspace-frame .sidebar > a { margin: 12px auto 32px; }
+    .workspace-frame .sidebar { position: sticky; top: 0; display: flex; flex-direction: column; height: 100dvh; padding: 16px 10px; border-right: 1px solid var(--line); border-bottom: 0; z-index: 30; }
     .workspace-frame .sidebar-nav { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 0; justify-items: stretch; }
     .workspace-frame .sidebar-footer { display: grid; grid-template-columns: 1fr; margin-top: auto; padding-top: 16px; border-top: 1px solid var(--line); }
     .workspace-frame .sidebar .account { display: flex; }
@@ -1055,8 +1061,8 @@
   @media (prefers-reduced-motion: reduce) { .workspace-frame { transition: none; } }
 }
 
-@layer layout {
-  .workspace-meetings > .main-content { padding: 28px 32px 40px; }
+@layer responsive {
+  .workspace-live-entry > .main-content, .workspace-meetings > .main-content { padding: 28px 32px 40px; }
   .meetings-library, .audio-meeting-page { max-width: none; margin: 0; }
   .meetings-library .page-header, .audio-meeting-page .page-header { align-items: center; margin-bottom: 20px; gap: 14px; }
   .meetings-library .page-heading h1, .audio-meeting-page .page-heading h1 { font-size: 30px; }
@@ -1069,7 +1075,7 @@
   .audio-meeting-page .page-back { margin: 0 0 12px; }
   .audio-meeting-page .page-heading > .mantine-Badge-root { margin-top: 8px; }
   @media (max-width: 760px) {
-    .workspace-meetings > .main-content { padding: 20px 16px 32px; }
+    .workspace-live-entry > .main-content, .workspace-meetings > .main-content { padding: 20px 16px 32px; }
     .meetings-library .page-header, .audio-meeting-page .page-header { align-items: flex-start; }
     .meetings-library .search-input-wrap { flex-wrap: wrap; }
     .meetings-library .search-input { flex-basis: 100%; }

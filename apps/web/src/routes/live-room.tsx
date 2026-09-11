@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Anchor, Button } from '@mantine/core'
-import { api } from '../lib/api'
+import { api, ApiError } from '../lib/api'
 import { consumeAutoJoin, RoomAccessError, liveApi, liveError, saveGrant, storedGrant, type LiveGrant } from '../lib/live'
 import { Brand, ErrorState } from '../components/ui'
 import { WorkspaceFrame } from '../components/shell'
@@ -35,7 +35,8 @@ export function LiveRoomPage() {
     queryFn: () => liveApi.state(effectiveGrant!), staleTime: 0, retry: false, refetchInterval: 1500 })
   function join(value: LiveGrant) { setGrant(value); setJoined(true) }
   const frame = (content: ReactNode) => effectiveGrant?.is_host ? <WorkspaceFrame>{content}</WorkspaceFrame> : content
-  if (joined && effectiveGrant && room.data && !(room.error instanceof RoomAccessError)) return frame(<RoomWorkspace grant={effectiveGrant} data={room.data} view={view} focus={focus}
+  const accessFailed = room.error instanceof RoomAccessError || (room.error instanceof ApiError && [403, 404].includes(room.error.status))
+  if (joined && effectiveGrant && room.data && !accessFailed) return frame(<RoomWorkspace grant={effectiveGrant} data={room.data} view={view} focus={focus} syncFailed={room.isError} onRetrySync={() => void room.refetch()}
     onMode={(mode, target) => { void navigate({ to: '/live/$roomId', params: { roomId }, search: { view: mode, focus: target }, replace: true }) }}
     onLeave={() => { setJoined(false) }} />)
   const error = room.error ?? entry.error

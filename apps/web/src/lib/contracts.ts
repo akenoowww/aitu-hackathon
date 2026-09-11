@@ -54,3 +54,7 @@ export const meetingSearchSchema = z.object({
   q: z.string().max(200).catch(''),
   offset: z.coerce.number().int().min(0).max(100_000).catch(0),
 })
+
+export const meetingViewSearchSchema = z.object({
+  view: z.enum(['conversation', 'insights', 'kanban']).optional().catch(undefined),
+})

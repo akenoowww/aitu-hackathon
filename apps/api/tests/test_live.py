@@ -62,7 +62,8 @@ def test_room_creation_and_voice_only_grants(app, authenticated_client):
         algorithms=["HS256"],
     )
     assert claims["video"]["canPublishSources"] == ["microphone"]
-    assert claims["video"]["canPublishData"] is False
+    assert claims["video"]["canPublishData"] is True
+    assert not claims["video"].get("roomAdmin")
     with pytest.raises(HTTPException):
         decode_member(app.state.settings, host["media_token"], UUID(host["room_id"]))
     assert len(authenticated_client.get("/api/v1/live/rooms").json()) == 1
@@ -229,8 +230,7 @@ def test_openai_receives_text_only_and_sources_are_checked(app):
     note = {
         "kind": "goal",
         "text": "Запустить пилот к пятнице.",
-        "source_ids": [identifier],
-        "quotes": ["запустить пилот к пятнице"],
+        "source_ids": ["u1"],
     }
 
     def respond(request):
@@ -255,8 +255,8 @@ def test_openai_receives_text_only_and_sources_are_checked(app):
 
     transport = httpx.MockTransport(respond)
     result = generate_insights(app.state.settings, sources, [], transport=transport)
-    assert result == [note]
-    note["quotes"] = ["отправить деньги завтра"]
+    assert result == [{**note, "source_ids": [identifier], "quotes": [sources[0]["text"]]}]
+    note["source_ids"] = ["invented-source"]
     with pytest.raises(RagError, match="UNSUPPORTED_INSIGHT"):
         generate_insights(app.state.settings, sources, [], transport=transport)
 
@@ -273,3 +273,24 @@ def test_stale_analysis_cannot_overwrite_current_insights(app, authenticated_cli
     process_analysis(app.state.session_factory, app.state.settings, (identifier, token, 1))
     with app.state.session_factory() as db:
         assert db.get(LiveRoom, identifier).insights[0]["text"] == "Current"
+
+
+def test_soft_analysis_failure_retries_only_on_new_speech(app, authenticated_client):
+    from aimeet_api.modules.live.worker import claim_analysis
+
+    host = create(authenticated_client)
+    room_id = UUID(host["room_id"])
+    with app.state.session_factory() as db:
+        room = db.get(LiveRoom, room_id)
+        room.transcript_revision = 1
+        room.analysis_status = "failed"
+        room.analysis_error = "UNSUPPORTED_INSIGHT"
+        room.analysis_through = 1
+        room.analysis_updated_at = utcnow() - timedelta(seconds=60)
+        db.commit()
+    assert claim_analysis(app.state.session_factory, app.state.settings) is None
+    with app.state.session_factory() as db:
+        db.get(LiveRoom, room_id).transcript_revision = 2
+        db.commit()
+    claim = claim_analysis(app.state.session_factory, app.state.settings)
+    assert claim is not None and claim[2] == 2

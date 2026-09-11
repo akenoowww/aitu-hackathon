@@ -1,21 +1,19 @@
 import { useRef, useState } from 'react'
-import { MeetingBoard } from '../components/board/meeting-board'
-import { MeetingChat } from '../components/rag/meeting-chat'
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Anchor, Badge, Button, Modal, Text, Title } from '@mantine/core'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import { meetingQuery, queryClient } from '../lib/query'
-import { Disclosure, ErrorState, InlineError, LoadingState, PageHeading } from '../components/ui'
-import { AudioWorkspace } from '../components/audio-workspace'
-import { Transcription } from '../components/transcription'
-import { meetingStatus, timestamp } from '../lib/transcription'
+import { ErrorState, InlineError, LoadingState } from '../components/ui'
+import { MeetingWorkspace, type MeetingView } from '../components/audio-workspace'
+import { meetingStatus } from '../lib/transcription'
 
 const route = getRouteApi('/_workspace/meetings/$meetingId')
 
 export function MeetingDetailPage() {
   const { meetingId } = route.useParams()
+  const { view = 'conversation' } = route.useSearch()
   const navigate = useNavigate()
   const meeting = useQuery(meetingQuery(meetingId))
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -39,10 +37,10 @@ export function MeetingDetailPage() {
     description={errorMessage(meeting.error)} onRetry={() => void meeting.refetch()}>
     <Button variant="default" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}>К встречам</Button>
   </ErrorState></div>
-  return <div className={`page ${meeting.data.source_type === 'audio' ? 'audio-meeting-page' : ''}`}>
+  return <div className="saved-meeting-shell">
     <Anchor className="page-back" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}><ArrowLeft size={19} aria-hidden="true" />К встречам</Anchor>
-    <header className="page-header">
-      <PageHeading title={meeting.data.title}><Badge color="gray" variant="light" radius="xl" tt="none">{meetingStatus(meeting.data)}</Badge></PageHeading>
+    <header className="live-room-heading saved-meeting-header">
+      <div><Title order={1}>{meeting.data.title}</Title><Text className="live-status" c="dimmed"><span className="live-status-dot" />{meeting.data.source_type === 'audio' ? 'Запись встречи' : 'Сохранённая встреча'}<Badge color="gray" variant="light" radius="xl" tt="none">{meetingStatus(meeting.data)}</Badge></Text></div>
       <Button ref={deleteTrigger} variant="light" color="red" leftSection={<Trash2 size={18} aria-hidden="true" />} onClick={() => setDialogOpen(true)}>Удалить встречу</Button>
       <Modal.Root opened={dialogOpen} onClose={closeDialog} centered size={460} closeOnClickOutside={false} closeOnEscape={!remove.isPending}
         returnFocus onExitTransitionEnd={() => { if (!remove.isSuccess) deleteTrigger.current?.focus() }}>
@@ -60,20 +58,7 @@ export function MeetingDetailPage() {
         </Modal.Content>
       </Modal.Root>
     </header>
-    {meeting.data.source_type === 'audio' ? <AudioWorkspace key={meetingId} meeting={meeting.data} /> : <>
-    <MeetingBoard key={`board-${meetingId}`} meetingId={meetingId} title={meeting.data.title} meeting={meeting.data}
-      canGenerate={!!meeting.data.transcript.trim()} />
-    <article className="transcript-panel" aria-labelledby="transcript-title">
-      <header className="section-header"><Title order={2} size="h3" id="transcript-title">Стенограмма</Title></header>
-      <Transcription meeting={meeting.data} />
-      <div className="transcript-text" data-testid="transcript">{meeting.data.transcript}</div>
-      {!!meeting.data.segments?.length && <Disclosure label="Временные отметки" className="transcript-segments">
-        <ol>{meeting.data.segments.map((segment, index) => <li key={index}>
-          <time>{timestamp(segment.start)}</time><p>{segment.text}</p>
-        </li>)}</ol>
-      </Disclosure>}
-    </article>
-    </>}
-    {meeting.data.transcript.trim() && (meeting.data.source_type === 'text' || meeting.data.status === 'transcribed') && <MeetingChat key={meetingId} meetingId={meetingId} />}
+    <MeetingWorkspace key={meetingId} meeting={meeting.data} view={view}
+      onViewChange={(next: MeetingView) => { void navigate({ to: '/meetings/$meetingId', params: { meetingId }, search: { view: next }, replace: true }) }} />
   </div>
 }

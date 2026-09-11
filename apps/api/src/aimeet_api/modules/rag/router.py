@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.modules.meetings.repository import MeetingRepository
+from aimeet_api.modules.rag.assistant import decide_reply
 from aimeet_api.modules.rag.chunking import embedding_profile, source_hash
 from aimeet_api.modules.rag.indexing import enqueue
 from aimeet_api.modules.rag.models import RagEdge, RagIndex, RagNode
@@ -13,6 +14,8 @@ from aimeet_api.modules.rag.providers import Providers, RagError
 from aimeet_api.modules.rag.retrieval import retrieve
 from aimeet_api.modules.rag.schemas import (
     Answer,
+    AssistantDecision,
+    AssistantQuestion,
     Graph,
     GraphEdge,
     GraphNode,
@@ -36,11 +39,27 @@ def get_providers(settings: SettingsDep):
 ProviderDep = Annotated[Providers, Depends(get_providers)]
 
 
+@router.post(
+    "/assistant/chat",
+    response_model=AssistantDecision,
+    dependencies=[Depends(require_csrf)],
+    operation_id="askAssistant",
+)
+def assistant_chat(
+    payload: AssistantQuestion, user: CurrentUser, db: DatabaseDep, providers: ProviderDep
+):
+    # The general conversation path never loads meetings or calls embeddings.
+    db.rollback()
+    return decide_reply(payload, providers)
+
+
 def get_meeting(db, user, meeting_id):
     meeting = MeetingRepository(db, user.workspace_id).get(meeting_id)
     if meeting is None:
         raise HTTPException(404, "Meeting not found")
-    if not meeting.transcript.strip():
+    if not meeting.transcript.strip() or (
+        meeting.source_type == "audio" and meeting.status != "transcribed"
+    ):
         raise RagError("TRANSCRIPT_NOT_READY", 409)
     if len(meeting.transcript) > 200_000:
         raise RagError("TRANSCRIPT_TOO_LARGE", 413)

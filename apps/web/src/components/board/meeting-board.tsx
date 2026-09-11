@@ -15,7 +15,7 @@ const options = (record: Record<string, string>) => Object.entries(record).map((
 const taskStatuses = ['todo', 'doing', 'blocked', 'done'] as const
 const kindKeys = ['task', 'decision', 'topic', 'question', 'risk'] as const
 
-export function MeetingBoard({ meetingId, title, canGenerate, meeting }: { meetingId: string; title: string; canGenerate: boolean; meeting: MeetingDetail }) {
+export function MeetingBoard({ meetingId, title, canGenerate, meeting, embedded = false }: { meetingId: string; title: string; canGenerate: boolean; meeting: MeetingDetail; embedded?: boolean }) {
   const cache = useQueryClient()
   const key = ['board', meetingId]
   const query = useQuery({ queryKey: key, queryFn: ({ signal }) => boardApi.get(meetingId, signal),
@@ -67,9 +67,9 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting }: { meeti
     setView('content'); setSearch(''); setAssignee(null); setPriority(null); setLateOnly(false)
     setShowArchive(false); setNeedsReview(false); setNeedsClarification(true)
   }
-  return <section className="meeting-board transcript-panel" aria-labelledby="meeting-board-title">
+  return <section className={`meeting-board transcript-panel ${embedded ? 'embedded-board' : ''}`} aria-labelledby="meeting-board-title">
     <header className="board-heading">
-      <div><Title order={2} id="meeting-board-title" size="h2">Итоги встречи</Title>
+      <div className={embedded ? 'board-heading-hidden' : undefined}><Title order={2} id="meeting-board-title" size="h2">{embedded ? 'Канбан встречи' : 'Итоги встречи'}</Title>
         <Text c="dimmed" size="sm">Поручения и договорённости из обсуждения</Text></div>
       <div className="board-actions no-print">
         <Button variant="default" leftSection={<Plus size={16} />} disabled={!board || query.isError} onClick={() => setEditing({ version: board!.version })}>Добавить карточку</Button>
@@ -97,9 +97,9 @@ export function MeetingBoard({ meetingId, title, canGenerate, meeting }: { meeti
         <Button variant="subtle" size="compact-sm" onClick={showClarifications}>Перейти к уточнениям</Button>
       </div>}
       <div className="board-tools no-print">
-        <SegmentedControl value={view} onChange={setView} aria-label="Представление итогов" data={[
+        {embedded ? <Select aria-label="Группировка карточек" value={view} onChange={(value) => { if (value) setView(value) }} data={[{ value: 'tasks', label: 'По статусам поручений' }, { value: 'content', label: 'По содержанию встречи' }]} /> : <SegmentedControl value={view} onChange={setView} aria-label="Представление итогов" data={[
           { value: 'tasks', label: 'Канбан поручений' }, { value: 'content', label: 'По содержанию' }, { value: 'summary', label: 'Выжимка' },
-        ]} />
+        ]} />}
         <Menu position="bottom-end" withinPortal><Menu.Target>
           <Button variant="default" leftSection={<Download size={16} />} disabled={!cards.length && !board.summary.length}>Экспорт</Button>
         </Menu.Target><Menu.Dropdown>

@@ -17,6 +17,30 @@ class Question(BaseModel):
         return value.strip()
 
 
+class ConversationMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=6000)
+
+
+class AssistantQuestion(Question):
+    history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
+
+    @field_validator("history")
+    @classmethod
+    def bounded_history(cls, value):
+        if sum(len(message.content) for message in value) > 40_000:
+            raise ValueError("Conversation history is too long")
+        return value
+
+
+class AssistantDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["reply", "search_meetings"]
+    answer: str = Field(max_length=12000)
+    search_query: str = Field(max_length=2000)
+
+
 class IndexStatus(BaseModel):
     index_id: uuid.UUID | None
     status: Literal["not_indexed", "queued", "running", "ready", "failed"]

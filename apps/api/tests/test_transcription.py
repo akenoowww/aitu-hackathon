@@ -306,6 +306,10 @@ def test_partial_transcript_is_visible_and_stale_writers_are_fenced(app, authent
     assert body["transcription"]["status"] == "running"
     assert body["transcription"]["duration_seconds"] == 1.0
     assert client.post(f"/api/v1/meetings/{mid}/board/generate").status_code == 409
+    assert client.post(f"/api/v1/meetings/{mid}/rag/index").status_code == 409
+    coverage = client.get("/api/v1/rag/index").json()
+    assert coverage["unavailable"] == 1
+    assert coverage["not_indexed"] == 0
     assert client.post(f"/api/v1/meetings/{mid}/transcription/cancel").status_code == 200
     assert not heartbeat(
         factory, settings, claim, 90, partial={**completed(), "transcript": "STALE"}

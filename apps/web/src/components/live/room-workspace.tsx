@@ -2,11 +2,11 @@ import { useLiveEntrance } from './use-live-entrance'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Anchor, Avatar, Button, Group, Modal, Stack, Tabs, Text, TextInput, Title } from '@mantine/core'
+import { ActionIcon, Anchor, Avatar, Button, Group, Modal, Stack, Tabs, Text, TextInput, Title } from '@mantine/core'
 import { ArrowRight, Check, CheckSquare, Lightbulb, LogOut, Mic, MicOff, Plus, Target, CircleHelp } from 'lucide-react'
-import { Room, RoomEvent, Track, type Participant, type RemoteTrack } from 'livekit-client'
+import type { Room, Participant, RemoteTrack } from 'livekit-client'
 import { Brand, InlineError } from '../ui'
-import { captureMicrophone, formatTime, liveApi, liveError, mediaUrl, saveGrant, type LiveGrant, type LiveState } from '../../lib/live'
+import { captureMicrophone, formatTime, liveApi, liveError, mediaUrl, saveGrant, transcriptRetryDelay, type LiveGrant, type LiveState } from '../../lib/live'
 import { pageTitle } from '../../brand'
 import { LiveConnecting } from './live-connecting'
 import './live.css'
@@ -22,12 +22,13 @@ const analysisErrors: Record<string, string> = {
   UNSUPPORTED_INSIGHT: 'Выводы не удалось подтвердить репликами. Предыдущие итоги сохранены.',
 }
 
-export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
+export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave, syncFailed, onRetrySync }: {
   grant: LiveGrant; data: LiveState; view: Mode; focus?: string;
-  onMode: (mode: Mode, focus?: string) => void; onLeave: () => void;
+  onMode: (mode: Mode, focus?: string) => void; onLeave: () => void; syncFailed?: boolean; onRetrySync?: () => void;
 }) {
   const entering = useLiveEntrance()
   const rtc = useRef<Room | null>(null)
+  const mediaSDK = useRef<typeof import('livekit-client') | null>(null)
   const audioElements = useRef<HTMLDivElement>(null)
   const stopCapture = useRef<(() => Promise<void>) | null>(null)
   const pane = useRef<HTMLDivElement>(null)
@@ -49,15 +50,17 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
   const [endOpen, setEndOpen] = useState(false)
   const active = data.status === 'active'
   const grantRef = useRef(grant)
-  const fullTranscript = useQuery({ queryKey: ['live', 'transcript', grant.room_id], enabled: view === 'conversation', queryFn: async () => {
+  const fullTranscript = useQuery({ queryKey: ['live', 'transcript', grant.room_id, grant.participant_id], enabled: view === 'conversation', queryFn: async ({ signal }) => {
     const result = []
     for (let offset = 0; offset <= 20000; offset += 300) {
-      const page = await liveApi.transcript(grant, offset)
+      const page = await liveApi.transcript(grantRef.current, offset, signal)
       result.push(...page)
       if (page.length < 300) break
     }
     return result
-  }, staleTime: 10000 })
+  }, staleTime: 10000,
+  retry: (failures, error) => failures < 1 && transcriptRetryDelay(error, failures) !== false,
+  refetchInterval: (query) => query.state.status === 'error' ? transcriptRetryDelay(query.state.error, query.state.errorUpdateCount) : false })
   const utterances = useMemo(() => {
     const result = new Map((fullTranscript.data ?? []).map((row) => [row.id, row]))
     for (const row of data.utterances) result.set(row.id, row)
@@ -74,39 +77,45 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
   useEffect(() => {
     if (!active) return
     let disposed = false
+    let closingClient: Room | null = null
     const audioContainer = audioElements.current
-    const client = new Room({ singlePeerConnection: false, adaptiveStream: false, dynacast: false, disconnectOnPageLeave: true })
-    rtc.current = client
-    const sync = () => {
-      if (disposed) return
-      const people: Participant[] = [client.localParticipant, ...client.remoteParticipants.values()]
-      setPeers(people.filter((p) => !!p.identity).map((p) => ({ id: p.identity, name: p.name || 'Участник', speaking: p.isSpeaking, muted: !p.isMicrophoneEnabled })))
-      setMic(client.localParticipant.isMicrophoneEnabled)
-    }
-    const startCapture = async () => {
-      const track = client.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
-      if (!track || !client.localParticipant.isMicrophoneEnabled || disposed) return
-      try {
-        const stop = await captureMicrophone(track.mediaStreamTrack, grantRef.current, (message) => { if (!disposed) setAudioError(message) })
-        if (disposed) await stop(); else stopCapture.current = stop
-      } catch { if (!disposed) setAudioError('Не удалось подключить распознавание. Выключите и включите микрофон, чтобы повторить.') }
-    }
-    const attach = (track: RemoteTrack) => {
-      if (track.kind === Track.Kind.Audio && !disposed) {
-        const element = track.attach(); element.setAttribute('data-remote-audio', 'true')
-        audioContainer?.append(element)
-      }
-    }
-    client.on(RoomEvent.TrackSubscribed, attach)
-    client.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((element) => element.remove()))
-    client.on(RoomEvent.ParticipantConnected, sync).on(RoomEvent.ParticipantDisconnected, sync)
-      .on(RoomEvent.ActiveSpeakersChanged, sync).on(RoomEvent.TrackMuted, sync).on(RoomEvent.TrackUnmuted, sync)
-      .on(RoomEvent.LocalTrackPublished, sync).on(RoomEvent.LocalTrackUnpublished, sync)
-    client.on(RoomEvent.Reconnecting, () => { if (!disposed) { setConnection('reconnecting'); void stopAudio() } })
-    client.on(RoomEvent.Reconnected, () => { if (!disposed) { setConnection('connected'); sync(); void startCapture() } })
-    client.on(RoomEvent.Disconnected, () => { if (!disposed) { setConnection('disconnected'); setMic(false); void stopAudio() } })
     void (async () => {
       try {
+        const module = await import('livekit-client')
+        if (disposed) return
+        mediaSDK.current = module
+        const { Room, RoomEvent, Track } = module
+        const client = new Room({ singlePeerConnection: false, adaptiveStream: false, dynacast: false, disconnectOnPageLeave: true })
+        closingClient = client
+        rtc.current = client
+        const sync = () => {
+          if (disposed) return
+          const people: Participant[] = [client.localParticipant, ...client.remoteParticipants.values()]
+          setPeers(people.filter((p) => !!p.identity).map((p) => ({ id: p.identity, name: p.name || 'Участник', speaking: p.isSpeaking, muted: !p.isMicrophoneEnabled })))
+          setMic(client.localParticipant.isMicrophoneEnabled)
+        }
+        const startCapture = async () => {
+          const track = client.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+          if (!track || !client.localParticipant.isMicrophoneEnabled || disposed) return
+          try {
+            const stop = await captureMicrophone(track.mediaStreamTrack, grantRef.current, (message) => { if (!disposed) setAudioError(message) })
+            if (disposed) await stop(); else stopCapture.current = stop
+          } catch { if (!disposed) setAudioError('Не удалось подключить распознавание. Выключите и включите микрофон, чтобы повторить.') }
+        }
+        const attach = (track: RemoteTrack) => {
+          if (track.kind === Track.Kind.Audio && !disposed) {
+            const element = track.attach(); element.setAttribute('data-remote-audio', 'true')
+            audioContainer?.append(element)
+          }
+        }
+        client.on(RoomEvent.TrackSubscribed, attach)
+        client.on(RoomEvent.TrackUnsubscribed, (track) => track.detach().forEach((element) => element.remove()))
+        client.on(RoomEvent.ParticipantConnected, sync).on(RoomEvent.ParticipantDisconnected, sync)
+          .on(RoomEvent.ActiveSpeakersChanged, sync).on(RoomEvent.TrackMuted, sync).on(RoomEvent.TrackUnmuted, sync)
+          .on(RoomEvent.LocalTrackPublished, sync).on(RoomEvent.LocalTrackUnpublished, sync)
+        client.on(RoomEvent.Reconnecting, () => { if (!disposed) { setConnection('reconnecting'); void stopAudio() } })
+        client.on(RoomEvent.Reconnected, () => { if (!disposed) { setConnection('connected'); sync(); void startCapture() } })
+        client.on(RoomEvent.Disconnected, () => { if (!disposed) { setConnection('disconnected'); setMic(false); void stopAudio() } })
         const fresh = await liveApi.refresh(grantRef.current)
         if (disposed) return
         grantRef.current = fresh; saveGrant(fresh)
@@ -116,11 +125,16 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
         await client.startAudio()
         try { await client.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, channelCount: 1 }); sync(); await startCapture() }
         catch { if (!disposed) setMediaError('Разрешите доступ к микрофону, чтобы говорить. Других участников можно слушать.') }
-      } catch (error) { console.warn('VOICE_CONNECTION_FAILURE', error instanceof Error ? error.message.replace(/[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '<token>') : 'unknown'); if (!disposed) { setConnection('disconnected'); setMediaError('Не удалось подключить голосовую связь. Проверьте соединение и попробуйте снова.') } }
+      } catch {
+        if (!disposed) {
+          setConnection('disconnected')
+          setMediaError(mediaSDK.current ? 'Не удалось подключить голосовую связь. Проверьте соединение и попробуйте снова.' : 'В этом браузере не удалось включить голосовую связь. Стенограмма и итоги доступны.')
+        }
+      }
     })()
     return () => {
       disposed = true
-      void stopAudio().finally(() => client.disconnect())
+      void stopAudio().finally(() => closingClient?.disconnect())
       rtc.current = null
       audioContainer?.replaceChildren()
     }
@@ -145,13 +159,14 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
   const retryAnalysis = useMutation({ mutationFn: () => liveApi.retryAnalysis(grantRef.current) })
   async function toggleMic() {
     const client = rtc.current
-    if (!client || micBusy) return
+    const source = mediaSDK.current?.Track.Source.Microphone
+    if (!client || !source || micBusy) return
     setMicBusy(true); setMediaError(''); setAudioError('')
     try {
       if (client.localParticipant.isMicrophoneEnabled) { await stopAudio(); await client.localParticipant.setMicrophoneEnabled(false) }
       else {
         await client.localParticipant.setMicrophoneEnabled(true, { echoCancellation: true, noiseSuppression: true, channelCount: 1 })
-        const track = client.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+        const track = client.localParticipant.getTrackPublication(source)?.track
         if (track) stopCapture.current = await captureMicrophone(track.mediaStreamTrack, grantRef.current, setAudioError)
       }
       setMic(client.localParticipant.isMicrophoneEnabled)
@@ -170,18 +185,19 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
   return <div className="live-room-shell">
     {connecting && <LiveConnecting roomTitle={data.title} />}
     <div className={connecting ? 'live-workspace-pending' : 'live-reveal'} inert={connecting} aria-hidden={connecting || undefined}>
-    <header className={`live-topbar ${grant.is_host ? 'live-host-topbar' : ''}`}>{!grant.is_host && <Brand />}
-      {active && <Button className="live-mic-button" variant="light" radius="xl" color={mic ? 'forest' : 'gray'} leftSection={mic ? <Mic size={20} /> : <MicOff size={20} />} onClick={() => void toggleMic()} disabled={connection !== 'connected'} loading={micBusy} aria-pressed={mic} aria-label={mic ? 'Выключить микрофон' : 'Включить микрофон'}>{mic ? 'Микрофон включён' : 'Микрофон выключен'}</Button>}
-    </header>
+    {!grant.is_host && <header className="live-topbar"><Brand /></header>}
     <div className="live-room-main">
       <section className="live-room-heading">
         <div><Title order={1}>{data.title}</Title><Text className="live-status" c="dimmed"><span className={active && connection === 'connected' ? 'live-status-dot active' : 'live-status-dot'} />{status} · {formatTime(elapsed / 1000)}</Text></div>
-        <div className="live-people" aria-label="Участники голосовой встречи">{shownPeers.map((peer) => <div className={`live-person ${peer.speaking ? 'is-speaking' : ''}`} key={peer.id}><Avatar size={54} radius="xl" color="forest">{peer.name.slice(0, 1).toUpperCase()}</Avatar><Text size="sm" fw={500}>{peer.name}{peer.id === grant.participant_id ? ' (вы)' : ''}</Text>{peer.speaking && <Text size="xs" c="dimmed">Говорит</Text>}</div>)}</div>
-        <Group className="live-room-actions" gap="sm">{grant.is_host && active && <><Button variant="default" leftSection={<Plus size={17} />} loading={invite.isPending} onClick={() => invite.mutate()}>Пригласить</Button><Button onClick={() => setEndOpen(true)}>Завершить</Button></>}
+        {shownPeers.length > 0 && <div className="live-people" aria-label="Участники голосовой встречи">{shownPeers.map((peer) => <div className={`live-person ${peer.speaking ? 'is-speaking' : ''}`} key={peer.id}><Avatar size={36} radius="xl" color="forest">{peer.name.slice(0, 1).toUpperCase()}</Avatar><Text size="sm" fw={500}>{peer.name}{peer.id === grant.participant_id ? ' (вы)' : ''}</Text>{peer.speaking && <Text size="xs" c="dimmed">Говорит</Text>}</div>)}</div>}
+        <Group className="live-room-actions" gap="sm">
+          {active && <ActionIcon className="live-mic-button" size={42} variant="light" radius="md" color={mic ? 'forest' : 'gray'} onClick={() => void toggleMic()} disabled={connection !== 'connected'} loading={micBusy} aria-pressed={mic} aria-label={mic ? 'Выключить микрофон' : 'Включить микрофон'} title={mic ? 'Выключить микрофон' : 'Включить микрофон'}>{mic ? <Mic size={20} /> : <MicOff size={20} />}</ActionIcon>}
+          {grant.is_host && active && <><Button variant="default" leftSection={<Plus size={17} />} loading={invite.isPending} onClick={() => invite.mutate()}>Пригласить</Button><Button onClick={() => setEndOpen(true)}>Завершить</Button></>}
           {!grant.is_host && <Button variant="default" leftSection={<LogOut size={17} />} onClick={() => { void stopAudio().finally(() => { void rtc.current?.disconnect(); onLeave() }) }}>Выйти</Button>}
         </Group>
       </section>
-      {(mediaError || audioError || data.audio_error) && <InlineError>{mediaError || audioError || 'Распознавание прервалось. Некоторые реплики могли не сохраниться.'}{connection === 'disconnected' && active && <Button variant="subtle" onClick={() => { setMediaError(''); setConnection('connecting'); setReconnect((value) => value + 1) }}>Подключиться снова</Button>}</InlineError>}
+      {(mediaError || audioError || data.audio_error) && <InlineError>{mediaError || audioError || 'Распознавание прервалось. Некоторые реплики могли не сохраниться.'}{connection === 'disconnected' && active && <Button variant="subtle" onClick={() => { if (!mediaSDK.current) { location.reload(); return } setMediaError(''); setConnection('connecting'); setReconnect((value) => value + 1) }}>Подключиться снова</Button>}</InlineError>}
+      {syncFailed && <InlineError>Не удалось обновить стенограмму и итоги. <Button variant="subtle" onClick={onRetrySync}>Обновить данные</Button></InlineError>}
       {invite.isError && <InlineError>{liveError(invite.error)}</InlineError>}
       <Tabs value={view} onChange={(value) => changeMode(value as Mode)} keepMounted={false} className="live-mode-tabs"><Tabs.List justify="center"><Tabs.Tab value="conversation">Разговор</Tabs.Tab><Tabs.Tab value="insights">Итоги</Tabs.Tab></Tabs.List></Tabs>
       <div ref={pane} className="live-focus-pane" onScroll={(event) => { const el = event.currentTarget; scroll.current[view] = el.scrollTop; if (view === 'conversation') followConversation.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 80 }}>
@@ -192,15 +208,15 @@ export function RoomWorkspace({ grant, data, view, focus, onMode, onLeave }: {
             return <article className="live-note" key={`${note.kind}-${index}`}><div className="live-note-icon"><Icon size={24} /></div><div className="live-note-copy"><Text className="live-note-kind">{kind.label}</Text><Text className="live-note-text">{note.text}</Text></div><Anchor component="button" className="live-source-link" onClick={() => changeMode('conversation', note.source_ids[0])}>{source ? `${source.speaker} · ${formatTime(source.start)}` : 'К исходной реплике'}<ArrowRight size={17} /></Anchor></article>
           })}</Stack>}
         </section> : <section aria-label="Стенограмма разговора" data-testid="live-transcript">
-          {fullTranscript.isError && <InlineError>Не удалось загрузить ранние реплики. <Button variant="subtle" onClick={() => void fullTranscript.refetch()}>Повторить</Button></InlineError>}
-          {utterances.length === 0 ? <div className="live-empty"><Mic size={29} /><Title order={2}>Слушаем разговор</Title><Text c="dimmed">Реплики появятся после коротких пауз в речи. Пока можно пригласить участников.</Text></div> : utterances.map((row) => <article data-utterance-id={row.id} className={`live-utterance ${focus === row.id ? 'focused' : ''}`} key={row.id}><Group gap="sm"><Text fw={600}>{row.speaker}</Text><Text size="sm" c="dimmed">{formatTime(row.start)}</Text></Group><Text className="live-utterance-text">{row.text}</Text></article>)}
+          {fullTranscript.isError && <InlineError>Не удалось загрузить ранние реплики. {transcriptRetryDelay(fullTranscript.error, 1) !== false ? 'Повторим загрузку автоматически.' : liveError(fullTranscript.error)} <Button variant="subtle" loading={fullTranscript.isFetching} onClick={() => void fullTranscript.refetch()}>Повторить</Button></InlineError>}
+          {utterances.length === 0 ? <div className="live-empty"><Mic size={29} /><Title order={2}>{connection === 'connected' ? 'Слушаем разговор' : 'Пока нет реплик'}</Title><Text c="dimmed">{connection === 'connected' ? 'Реплики появятся после коротких пауз в речи. Пока можно пригласить участников.' : 'Подключитесь к голосовой связи, чтобы продолжить разговор.'}</Text></div> : utterances.map((row) => <article data-utterance-id={row.id} className={`live-utterance ${focus === row.id ? 'focused' : ''}`} key={row.id}><Group gap="sm"><Text fw={600}>{row.speaker}</Text><Text size="sm" c="dimmed">{formatTime(row.start)}</Text></Group><Text className="live-utterance-text">{row.text}</Text></article>)}
         </section>}
       </div>
       {data.status === 'ended' && data.meeting_id && grant.is_host && <Anchor renderRoot={(props) => <Link {...props} to="/meetings/$meetingId" params={{ meetingId: data.meeting_id! }} />}>Открыть сохранённую встречу</Anchor>}
     </div>
     </div>
     <div ref={audioElements} aria-hidden="true" className="live-audio-elements" />
-    <Modal opened={inviteOpen} onClose={() => setInviteOpen(false)} title="Пригласить в разговор" centered><Stack><Text size="sm" c="dimmed">По этой ссылке участники смогут войти в голосовую комнату и увидеть её разговор и итоги.</Text><TextInput aria-label="Ссылка на встречу" value={inviteLink} readOnly onFocus={(event) => event.currentTarget.select()} /><Button onClick={() => { void navigator.clipboard.writeText(inviteLink).then(() => setCopied(true)).catch(() => setCopied(false)) }}>{copied ? 'Ссылка скопирована' : 'Скопировать ссылку'}</Button></Stack></Modal>
+    <Modal opened={inviteOpen} onClose={() => setInviteOpen(false)} title="Пригласить в разговор" centered><Stack><Text size="sm" c="dimmed">По этой ссылке участники смогут войти в голосовую комнату и увидеть её разговор и итоги.</Text>{['localhost', '127.0.0.1', '[::1]'].includes(location.hostname) && <Text size="sm" c="dimmed">Сейчас ссылка открывается только на этом компьютере. Для других устройств приложению нужен общий адрес.</Text>}<TextInput aria-label="Ссылка на встречу" value={inviteLink} readOnly onFocus={(event) => event.currentTarget.select()} /><Button onClick={() => { void navigator.clipboard.writeText(inviteLink).then(() => setCopied(true)).catch(() => setCopied(false)) }}>{copied ? 'Ссылка скопирована' : 'Скопировать ссылку'}</Button></Stack></Modal>
     <Modal opened={endOpen} onClose={() => { if (!end.isPending) setEndOpen(false) }} title="Завершить встречу?" centered><Stack><Text>Голосовая связь завершится для всех. Стенограмма и итоги сохранятся.</Text>{end.isError && <InlineError>{liveError(end.error)}</InlineError>}<Group justify="flex-end"><Button variant="default" disabled={end.isPending} onClick={() => setEndOpen(false)}>Продолжить встречу</Button><Button color="red" loading={end.isPending} onClick={() => end.mutate()}>Завершить для всех</Button></Group></Stack></Modal>
   </div>
 }
