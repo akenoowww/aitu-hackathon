@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.schema import CreateSchema, DropSchema
 
@@ -51,8 +51,9 @@ def isolated_database_url(tmp_path):
     schema_name = f"aimeet_test_{uuid4().hex}"
     admin_engine = create_engine(url)
     with admin_engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public"))
         connection.execute(CreateSchema(schema_name))
-    options = f"{url.query.get('options', '')} -csearch_path={schema_name}".strip()
+    options = f"{url.query.get('options', '')} -csearch_path={schema_name},public".strip()
     scoped_url = url.update_query_dict({"options": options})
     try:
         yield scoped_url.render_as_string(hide_password=False)
@@ -76,7 +77,8 @@ def app(isolated_database_url, monkeypatch):
         login_ip_attempt_limit=30,
     )
     application = create_app(settings)
-    Base.metadata.create_all(application.state.engine)
+    # Do not let checkfirst see migrated public tables through the vector extension search_path.
+    Base.metadata.create_all(application.state.engine, checkfirst=False)
     yield application
     application.state.engine.dispose()
 

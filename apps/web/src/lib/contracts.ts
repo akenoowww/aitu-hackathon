@@ -16,14 +16,23 @@ export const languageSchema = z.enum(['auto', 'ru', 'kk', 'en'])
 export const languageLabels: Record<z.infer<typeof languageSchema>, string> = {
   auto: 'Не указан', ru: 'Русский', kk: 'Қазақша', en: 'English',
 }
+export const transcriptionSchema = z.object({
+  status: z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']),
+  progress: z.number().int().min(0).max(100), error_code: z.string().nullable(),
+  detected_language: z.string().nullable(), duration_seconds: z.number().nullable(),
+})
 export const meetingSummarySchema = z.object({
   id: z.uuid(), title: z.string(), language: languageSchema,
-  status: z.literal('draft'), source_type: z.literal('text'),
+  status: z.enum(['draft', 'transcribed']), source_type: z.enum(['text', 'audio']),
   created_at: z.string(), updated_at: z.string(),
   transcript_length: z.number().int().nonnegative(),
+  // Text-only API versions omit audio metadata; keep those meetings readable.
+  transcription: transcriptionSchema.nullable().default(null),
 }) satisfies z.ZodType<MeetingSummary>
 export const meetingDetailSchema = meetingSummarySchema.extend({
   transcript: z.string(),
+  audio_filename: z.string().nullable().default(null), audio_bytes: z.number().nullable().default(null),
+  segments: z.array(z.object({ start: z.number(), end: z.number(), text: z.string() })).nullable().default(null),
 }) satisfies z.ZodType<MeetingDetail>
 export const meetingListSchema = z.object({
   items: z.array(meetingSummarySchema), total: z.number().int().nonnegative(),

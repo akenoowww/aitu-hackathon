@@ -3,6 +3,7 @@ import logging
 import time
 import uuid
 
+from starlette.exceptions import HTTPException
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -18,9 +19,10 @@ logger.propagate = False
 class RequestBoundaryMiddleware:
     """Bound request bodies and attach trace IDs without logging customer content."""
 
-    def __init__(self, app: ASGIApp, max_request_bytes: int):
+    def __init__(self, app: ASGIApp, max_request_bytes: int, max_audio_bytes: int):
         self.app = app
         self.max_request_bytes = max_request_bytes
+        self.max_audio_bytes = max_audio_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -57,6 +59,11 @@ class RequestBoundaryMiddleware:
             await response(scope, receive, send_with_headers)
 
         try:
+            limit = (
+                self.max_audio_bytes
+                if scope.get("path") == "/api/v1/meetings/audio" and scope.get("method") == "POST"
+                else self.max_request_bytes
+            )
             headers = dict(scope.get("headers", []))
             content_length = headers.get(b"content-length")
             if content_length is not None:
@@ -68,29 +75,18 @@ class RequestBoundaryMiddleware:
                 if declared_length < 0:
                     await reject(400, "Invalid content length")
                     return
-                if declared_length > self.max_request_bytes:
+                if declared_length > limit:
                     await reject(413, "Request body is too large")
                     return
-            # Bound actual bytes as well as Content-Length, including chunked uploads.
-            body = bytearray()
-            while True:
-                message = await receive()
-                if message["type"] == "http.disconnect":
-                    return
-                body.extend(message.get("body", b""))
-                if len(body) > self.max_request_bytes:
-                    await reject(413, "Request body is too large")
-                    return
-                if not message.get("more_body", False):
-                    break
-            delivered = False
-
+            # Count bytes as consumed: audio must never be buffered in API memory.
+            received = 0
             async def bounded_receive() -> Message:
-                nonlocal delivered
-                if delivered:
-                    return await receive()
-                delivered = True
-                return {"type": "http.request", "body": bytes(body), "more_body": False}
+                nonlocal received
+                message = await receive()
+                received += len(message.get("body", b""))
+                if received > limit:
+                    raise HTTPException(413, "Request body is too large")
+                return message
 
             await self.app(scope, bounded_receive, send_with_headers)
         except Exception as exc:

@@ -2,9 +2,11 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -13,7 +15,7 @@ from sqlalchemy import (
     Text,
     Uuid,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utcnow() -> datetime:
@@ -74,9 +76,9 @@ class Meeting(Base):
     __tablename__ = "meetings"
     __table_args__ = (
         CheckConstraint("language IN ('auto', 'ru', 'kk', 'en')", name="language"),
-        CheckConstraint("status = 'draft'", name="status"),
-        CheckConstraint("source_type = 'text'", name="source_type"),
-        CheckConstraint("transcript_length >= 1", name="transcript_length"),
+        CheckConstraint("status IN ('draft', 'transcribed')", name="status"),
+        CheckConstraint("source_type IN ('text', 'audio')", name="source_type"),
+        CheckConstraint("transcript_length >= 0", name="transcript_length"),
         Index("ix_meetings_workspace_created_id", "workspace_id", "created_at", "id"),
     )
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -90,6 +92,41 @@ class Meeting(Base):
     source_type: Mapped[str] = mapped_column(String(24), default="text")
     transcript: Mapped[str] = mapped_column(Text, deferred=True)
     transcript_length: Mapped[int] = mapped_column(Integer)
+    audio_filename: Mapped[str | None] = mapped_column(String(255))
+    audio_bytes: Mapped[int | None] = mapped_column(Integer)
+    audio_sha256: Mapped[str | None] = mapped_column(String(64))
+    segments: Mapped[list | None] = mapped_column(JSON, deferred=True)
+    transcription: Mapped["TranscriptionJob | None"] = relationship(
+        lazy="joined", cascade="all, delete-orphan", passive_deletes=True, uselist=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
+class TranscriptionJob(Base):
+    __tablename__ = "transcription_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')", name="status"
+        ),
+        CheckConstraint("progress >= 0 AND progress <= 100", name="progress"),
+        Index("ix_transcription_jobs_claim", "status", "lease_until", "created_at"),
+    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    meeting_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("meetings.id", ondelete="CASCADE"), unique=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="queued")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    lease_token: Mapped[uuid.UUID | None] = mapped_column(Uuid)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(48))
+    detected_language: Mapped[str | None] = mapped_column(String(16))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    config: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow

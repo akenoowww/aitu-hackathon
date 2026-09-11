@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, require_csrf
+from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.db.models import Meeting
 from aimeet_api.modules.meetings.repository import MeetingRepository
 from aimeet_api.modules.meetings.schemas import (
@@ -12,6 +12,7 @@ from aimeet_api.modules.meetings.schemas import (
     MeetingList,
     MeetingSummary,
 )
+from aimeet_api.modules.transcription.storage import audio_path
 
 router = APIRouter(prefix="/meetings", tags=["Meetings"])
 
@@ -69,10 +70,13 @@ def get_meeting(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep):
     dependencies=[Depends(require_csrf)],
     operation_id="deleteMeeting",
 )
-def delete_meeting(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep) -> Response:
+def delete_meeting(
+    meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep, settings: SettingsDep
+) -> Response:
     meeting = MeetingRepository(db, user.workspace_id).get(meeting_id)
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
     db.delete(meeting)
     db.commit()
+    audio_path(settings, meeting_id).unlink(missing_ok=True)
     return Response(status_code=204)

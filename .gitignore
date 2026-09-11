@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 .local/
+data/
+models/
+tmp/
 backups/
 node_modules/
 dist/
@@ -17,3 +20,5 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 .DS_Store
+# ONNX Runtime may create a telemetry session identifier even with event telemetry disabled.
+:memory:.ses

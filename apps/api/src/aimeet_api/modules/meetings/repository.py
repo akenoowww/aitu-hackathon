@@ -31,6 +31,6 @@ class MeetingRepository:
     def get(self, meeting_id: uuid.UUID) -> Meeting | None:
         return self.db.scalar(
             select(Meeting)
-            .options(undefer(Meeting.transcript))
+            .options(undefer(Meeting.transcript), undefer(Meeting.segments))
             .where(Meeting.workspace_id == self.workspace_id, Meeting.id == meeting_id)
         )

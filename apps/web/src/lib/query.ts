@@ -21,7 +21,9 @@ export const queryClient = new QueryClient({
 export const sessionQuery = queryOptions({ queryKey: ['session'], queryFn: ({ signal }) => api.session(signal), retry: false })
 export const meetingsQuery = (q: string, offset: number) => queryOptions({
   queryKey: ['meetings', 'list', { q, offset }], queryFn: ({ signal }) => api.meetings(q, offset, signal),
+  refetchInterval: (query) => query.state.data?.items.some((item) => ['queued', 'running'].includes(item.transcription?.status ?? '')) ? 3000 : false,
 })
 export const meetingQuery = (id: string) => queryOptions({
   queryKey: ['meetings', 'detail', id], queryFn: ({ signal }) => api.meeting(id, signal),
+  refetchInterval: (query) => ['queued', 'running'].includes(query.state.data?.transcription?.status ?? '') ? 2000 : false,
 })

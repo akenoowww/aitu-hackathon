@@ -10,6 +10,37 @@ x-api: &api
     APP_ENV: ${APP_ENV:-development}
     COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8787,http://127.0.0.1:8787}
+    INTELLIGENCE_MODEL: ${INTELLIGENCE_MODEL:-qwen3:8b}
+    INTELLIGENCE_LOCAL_URL: ${INTELLIGENCE_LOCAL_URL:-http://host.docker.internal:11434}
+    RAG_OFFLINE: ${RAG_OFFLINE:-false}
+    RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-openai}
+    RAG_LLM_MODEL: ${RAG_LLM_MODEL:-gpt-5.6-luna}
+    RAG_REASONING_EFFORT: ${RAG_REASONING_EFFORT:-max}
+    RAG_EMBEDDING_PROVIDER: ${RAG_EMBEDDING_PROVIDER:-openai}
+    RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-text-embedding-3-small}
+    RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-1536}
+    RAG_EMBEDDING_REVISION: ${RAG_EMBEDDING_REVISION:-1}
+    RAG_LOCAL_URL: ${RAG_LOCAL_URL:-http://host.docker.internal:11434}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    RAG_LOCAL_API_KEY: ${RAG_LOCAL_API_KEY:-}
+    RAG_EMBEDDING_LOCAL_URL: ${RAG_EMBEDDING_LOCAL_URL:-}
+    RAG_PROVIDER_TIMEOUT: ${RAG_PROVIDER_TIMEOUT:-180}
+    RAG_MAX_OUTPUT_TOKENS: ${RAG_MAX_OUTPUT_TOKENS:-8192}
+    RAG_CHILD_CHARS: ${RAG_CHILD_CHARS:-800}
+    RAG_PARENT_CHARS: ${RAG_PARENT_CHARS:-3200}
+    RAG_CONTEXT_CHARS: ${RAG_CONTEXT_CHARS:-18000}
+    RAG_CANDIDATE_COUNT: ${RAG_CANDIDATE_COUNT:-24}
+    RAG_TOP_K: ${RAG_TOP_K:-6}
+    RAG_NEIGHBOR_RADIUS: ${RAG_NEIGHBOR_RADIUS:-1}
+    RAG_MIN_SIMILARITY: ${RAG_MIN_SIMILARITY:-0.25}
+    RAG_JOB_LEASE_SECONDS: ${RAG_JOB_LEASE_SECONDS:-600}
+    RAG_JOB_MAX_ATTEMPTS: ${RAG_JOB_MAX_ATTEMPTS:-3}
+    AUDIO_DIR: /data/audio
+    STT_MODEL_PATH: /models/${STT_MODEL_DIR:-whisper-small}
+    STT_CPU_THREADS: ${STT_CPU_THREADS:-4}
+    HF_HUB_OFFLINE: '1'
+    HF_HUB_DISABLE_TELEMETRY: '1'
+    TRANSFORMERS_OFFLINE: '1'
   networks: [data]
   security_opt: [no-new-privileges:true]
   cap_drop: [ALL]
@@ -19,7 +50,7 @@ x-api: &api
 
 services:
   postgres:
-    image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    image: pgvector/pgvector:0.8.6-pg17@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f
     environment:
       POSTGRES_USER: aimeet
       POSTGRES_DB: aimeet
@@ -61,7 +92,9 @@ services:
   api:
     <<: *api
     command: [.venv/bin/uvicorn, aimeet_api.main:app, --host, 0.0.0.0, --port, '8000', --no-access-log, --no-proxy-headers]
-    networks: [data, ingress]
+    networks: [data, ingress, ai-egress]
+    extra_hosts: [host.docker.internal:host-gateway]
+    volumes: [audio-data:/data/audio]
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -73,6 +106,47 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     mem_limit: 512m
+    logging: *logging
+
+  transcription-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.transcription.worker]
+    volumes:
+      - audio-data:/data/audio:ro
+      - ./models:/models:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: ${STT_MEMORY_LIMIT:-4g}
+    cpus: ${STT_CPU_LIMIT:-4}
+    pids_limit: 128
+    logging: *logging
+
+  rag-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.rag.worker]
+    networks: [data, ai-egress]
+    extra_hosts: [host.docker.internal:host-gateway]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    pids_limit: 128
+    logging: *logging
+
+  intelligence-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.intelligence.worker]
+    networks: [data]
+    extra_hosts: [host.docker.internal:host-gateway]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    pids_limit: 128
     logging: *logging
 
   web:
@@ -99,8 +173,10 @@ services:
 
 volumes:
   postgres-data:
+  audio-data:
 
 networks:
+  ai-egress:
   edge:
   ingress:
     internal: true

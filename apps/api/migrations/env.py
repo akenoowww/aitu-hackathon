@@ -3,6 +3,8 @@ from sqlalchemy import create_engine, pool
 
 from aimeet_api.core.config import Settings
 from aimeet_api.db.models import Base
+from aimeet_api.modules.intelligence import models as intelligence_models  # noqa: F401
+from aimeet_api.modules.rag import models as rag_models  # noqa: F401
 
 config = context.config
 target_metadata = Base.metadata

@@ -2,11 +2,12 @@ import { createRootRoute, createRoute, createRouter, lazyRouteComponent, Link, N
 import { WorkspaceShell } from './components/shell'
 import { ErrorState } from './components/ui'
 import { meetingSearchSchema } from './lib/contracts'
+import { Button } from '@mantine/core'
 
 const rootRoute = createRootRoute({
   component: Outlet,
   errorComponent: ({ reset }) => <main className="main-content"><ErrorState description="Не удалось открыть страницу. Попробуйте ещё раз." onRetry={reset} /></main>,
-  notFoundComponent: () => <main className="main-content"><ErrorState title="Страница не найдена" description="Вернитесь к списку встреч."><Link className="button button-primary" to="/meetings" search={{ q: '', offset: 0 }}>К встречам</Link></ErrorState></main>,
+  notFoundComponent: () => <main className="main-content"><ErrorState title="Страница не найдена" description="Вернитесь к списку встреч."><Button renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}>К встречам</Button></ErrorState></main>,
 })
 const indexRoute = createRoute({ getParentRoute: () => rootRoute, path: '/', component: () => <Navigate to="/meetings" search={{ q: '', offset: 0 }} replace /> })
 const loginRoute = createRoute({ getParentRoute: () => rootRoute, path: '/login', component: lazyRouteComponent(() => import('./routes/login'), 'LoginPage') })

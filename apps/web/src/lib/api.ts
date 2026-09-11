@@ -19,7 +19,7 @@ async function request<T>(path: string, schema: z.ZodType<T> | null, options: Re
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')
   if (method !== 'GET') headers.set('X-Requested-With', 'aimeet')
-  if (options.body) headers.set('Content-Type', 'application/json')
+  if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
   const response = await fetch(`${baseUrl}${path}`, {
     ...options, method, headers, credentials: 'include', cache: 'no-store',
   })
@@ -45,6 +45,12 @@ export const api = {
   ),
   meeting: (id: string, signal?: AbortSignal) => request(`/meetings/${encodeURIComponent(id)}`, meetingDetailSchema, { signal }),
   createMeeting: (values: MeetingCreate) => request('/meetings', meetingDetailSchema, { method: 'POST', body: JSON.stringify(values) }),
+  uploadAudio: (values: { title: string; language: string; file: File }) => request(
+    `/meetings/audio?${new URLSearchParams({ title: values.title, language: values.language, filename: values.file.name })}`,
+    meetingDetailSchema, { method: 'POST', body: values.file, headers: { 'Content-Type': 'application/octet-stream' } },
+  ),
+  cancelTranscription: (id: string) => request(`/meetings/${encodeURIComponent(id)}/transcription/cancel`, meetingDetailSchema, { method: 'POST' }),
+  retryTranscription: (id: string) => request(`/meetings/${encodeURIComponent(id)}/transcription/retry`, meetingDetailSchema, { method: 'POST' }),
   deleteMeeting: (id: string) => request(`/meetings/${encodeURIComponent(id)}`, null, { method: 'DELETE' }),
 }
 
@@ -54,7 +60,9 @@ export function errorMessage(error: unknown, fallback = 'Не удалось з�
   if (error.status === 403) return 'Недостаточно прав для этого действия.'
   if (error.status === 404) return 'Встреча не найдена. Возможно, её уже удалили.'
   if (error.status === 429) return 'Слишком много попыток. Попробуйте немного позже.'
-  if (error.status === 413) return 'Текст слишком большой. Сократите его и повторите попытку.'
+  if (error.status === 413) return 'Превышен размер загрузки: до 100 МБ для аудио или 200 000 символов для текста.'
+  if (error.status === 415) return 'Выберите аудиофайл в формате MP3, WAV или M4A.'
+  if (error.status === 409) return 'Действие сейчас недоступно. Обновите встречу и попробуйте ещё раз.'
   if (error.status === 422) return 'Проверьте заполненные поля и повторите попытку.'
   return fallback
 }

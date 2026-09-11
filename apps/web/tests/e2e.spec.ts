@@ -22,7 +22,23 @@ async function expectTranscript(page: Page, transcript: string) {
   await expect.poll(() => content.textContent()).toBe(transcript);
 }
 
+async function expectNonceScrollLock(page: Page) {
+  await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
+  await expect.poll(() => page.evaluate(() => {
+    const nonce = document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"]')?.content;
+    const styles = Array.from(document.querySelectorAll('style'))
+      .filter((style) => style.textContent?.includes('data-scroll-locked'));
+    return Boolean(nonce && nonce !== '__AIMEET_CSP_NONCE__' && styles.length > 0 &&
+      styles.every((style) => style.nonce === nonce && style.sheet !== null));
+  })).toBe(true);
+}
+
 test('authenticated meeting lifecycle persists text and works on mobile', async ({ page }, testInfo) => {
+  const browserErrors: string[] = [];
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+  page.on('console', (message) => {
+    if (/Content Security Policy|violates.*policy/i.test(message.text())) browserErrors.push(message.text());
+  });
   const email = process.env.E2E_EMAIL;
   const password = process.env.E2E_PASSWORD;
   if (!email || !password) {
@@ -42,6 +58,9 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     page.getByRole('heading', { name: 'Войти в рабочее пространство', exact: true }),
   ).toBeVisible();
   await expectNoHorizontalOverflow(page);
+  await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await expect(page.getByLabel('Электронная почта', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByLabel('Электронная почта', { exact: true })).toBeFocused();
   await page.getByLabel('Электронная почта', { exact: true }).fill(email);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
@@ -55,9 +74,64 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     await expect(main.getByRole('heading', { name: 'Новая встреча', exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
-    await page.getByLabel('Название встречи', { exact: true }).fill(title);
-    await page.getByLabel('Язык стенограммы', { exact: true }).selectOption('ru');
+    await page.getByRole('button', { name: 'Сохранить встречу', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Название встречи', exact: true })).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByRole('textbox', { name: 'Название встречи', exact: true })).toBeFocused();
+    await expect(page.getByLabel('Стенограмма', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+
+    await page.getByRole('textbox', { name: 'Название встречи', exact: true }).fill(title);
+    // Exercise the portalled Mantine Select on the narrowest supported viewport.
+    await page.setViewportSize({ width: 320, height: 740 });
+    const language = page.getByRole('combobox', { name: 'Язык стенограммы', exact: true });
+    await expect(language).toHaveValue('Не указан');
+    await language.click();
+    await expect(page.getByRole('listbox')).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath('language-mobile.png'), fullPage: true, animations: 'disabled' });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('listbox')).toBeHidden();
+    await expect(language).toBeFocused();
+    // Pointer hover resets Mantine's keyboard selection; keep it outside the popup.
+    await page.mouse.move(0, 0);
+    await page.keyboard.press('ArrowDown');
+    await expect(page.getByRole('listbox')).toBeVisible();
+    await page.keyboard.press('ArrowDown');
+    const russianOptionId = await page.getByRole('option', { name: 'Русский', exact: true }).getAttribute('id');
+    await expect(language).toHaveAttribute('aria-activedescendant', russianOptionId!);
+    await expect(page.getByRole('option', { name: 'Русский', exact: true })).toHaveAttribute('data-combobox-selected', 'true');
+    await language.press('Enter');
+    await expect(language).toHaveValue('Русский');
+    await expect(language).toBeFocused();
+    await expectNoHorizontalOverflow(page);
     await page.getByLabel('Стенограмма', { exact: true }).fill(transcript);
+
+    await page.getByRole('radiogroup', { name: 'Источник встречи', exact: true }).getByText('Аудиозапись', { exact: true }).click();
+    await expect(page.getByRole('radio', { name: 'Аудиозапись', exact: true })).toBeChecked();
+    const audioLanguage = page.getByRole('combobox', { name: 'Язык записи', exact: true });
+    await audioLanguage.click();
+    await page.getByRole('option', { name: 'Қазақша', exact: true }).click();
+    await expect(audioLanguage).toHaveValue('Қазақша');
+    const chooser = page.waitForEvent('filechooser');
+    const fileField = page.getByRole('button', { name: 'Аудиозапись встречи', exact: true });
+    await fileField.click();
+    await (await chooser).setFiles({ name: 'Проверка выбора.wav', mimeType: 'audio/wav', buffer: Buffer.from('UI file chooser check') });
+    await expect(fileField).toHaveText('Проверка выбора.wav');
+    await expectNoHorizontalOverflow(page);
+    await page.screenshot({ path: testInfo.outputPath('audio-form-mobile.png'), fullPage: true, animations: 'disabled' });
+    // Changing the source keeps both forms intact without uploading test audio.
+    await page.getByRole('radiogroup', { name: 'Источник встречи', exact: true }).getByText('Текст стенограммы', { exact: true }).click();
+    await expect(language).toHaveValue('Русский');
+    await expect(page.getByLabel('Стенограмма', { exact: true })).toHaveValue(transcript);
+
+    // A failed save must retain the text and the controlled select's value.
+    await page.route('**/api/v1/meetings', (route) => route.fulfill({ status: 503 }), { times: 1 });
+    await page.getByRole('button', { name: 'Сохранить встречу', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Не удалось сохранить встречу');
+    await expect(page.getByLabel('Стенограмма', { exact: true })).toHaveValue(transcript);
+    await expect(language).toHaveValue('Русский');
+    await expectNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.screenshot({ path: testInfo.outputPath('meeting-form-desktop.png'), fullPage: true, animations: 'disabled' });
     const creation = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/v1/meetings' &&
@@ -66,8 +140,9 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     await page.getByRole('button', { name: 'Сохранить встречу', exact: true }).click();
     const creationResponse = await creation;
     expect(creationResponse.status()).toBe(201);
-    const created = (await creationResponse.json()) as { id: string };
+    const created = (await creationResponse.json()) as { id: string; language: string };
     expect(created.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(created.language).toBe('ru');
     createdPath = `/meetings/${created.id}`;
     await page.waitForURL((url) => url.pathname === createdPath);
 
@@ -93,26 +168,29 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     await result.click();
     await expectTranscript(page, transcript);
 
-    await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 320, height: 740 });
     await expect(main.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expectTranscript(page, transcript);
     await expectNoHorizontalOverflow(page);
 
     const deleteTrigger = page.getByRole('button', { name: 'Удалить встречу', exact: true });
-    const dialog = page.getByRole('alertdialog', { name: 'Удалить встречу?', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Удалить встречу?', exact: true });
     await deleteTrigger.click();
     await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveCSS('opacity', '1');
+    const dialogBounds = await dialog.boundingBox();
+    expect(dialogBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(dialogBounds!.x + dialogBounds!.width).toBeLessThanOrEqual(320);
     await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeVisible();
-    // A dialog may render even when CSP rejects Radix's scroll-lock stylesheet.
+    await page.screenshot({ path: testInfo.outputPath('delete-dialog-mobile.png'), fullPage: true, animations: 'disabled' });
+    // A dialog may render even when CSP rejects Mantine's scroll-lock stylesheet.
     // Verify the production edge nonce authorizes the actual injected style.
-    await expect(page.locator('body')).toHaveCSS('overflow', 'hidden');
-    await expect.poll(() => page.evaluate(() => {
-      const nonce = document.querySelector<HTMLMetaElement>('meta[name="csp-nonce"]')?.content;
-      const styles = Array.from(document.querySelectorAll('style'))
-        .filter((style) => style.textContent?.includes('data-scroll-locked'));
-      return Boolean(nonce && nonce !== '__AIMEET_CSP_NONCE__' && styles.length > 0 &&
-        styles.every((style) => style.nonce === nonce && style.sheet !== null));
-    })).toBe(true);
+    await expectNonceScrollLock(page);
+    await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(dialog.getByRole('button', { name: 'Удалить', exact: true })).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(dialog.getByRole('button', { name: 'Отмена', exact: true })).toBeFocused();
     await expectNoHorizontalOverflow(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -120,6 +198,11 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     await expectTranscript(page, transcript);
 
     await deleteTrigger.click();
+    await page.route(`**/api/v1/meetings/${created.id}`, (route) => route.fulfill({ status: 503 }), { times: 1 });
+    await dialog.getByRole('button', { name: 'Удалить', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toContainText('Не удалось удалить встречу');
+    await expect(dialog).toBeVisible();
+    await expectTranscript(page, transcript);
     await dialog.getByRole('button', { name: 'Удалить', exact: true }).click();
     await expect(page).toHaveURL(/\/meetings(?:\?.*)?$/);
 
@@ -147,6 +230,7 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     await expect(page).toHaveURL(/\/login(?:\?.*)?$/);
     await expect(page.getByLabel('Электронная почта', { exact: true })).toBeVisible();
     await expectNoHorizontalOverflow(page);
+    expect(browserErrors).toEqual([]);
   } finally {
     if (createdPath && !deleted && !page.isClosed()) {
       try {
@@ -154,7 +238,7 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
         await page.goto(createdPath);
         await page.getByRole('button', { name: 'Удалить встречу', exact: true }).click();
         await page
-          .getByRole('alertdialog', { name: 'Удалить встречу?', exact: true })
+          .getByRole('dialog', { name: 'Удалить встречу?', exact: true })
           .getByRole('button', { name: 'Удалить', exact: true })
           .click();
         await expect(page).toHaveURL(/\/meetings(?:\?.*)?$/);

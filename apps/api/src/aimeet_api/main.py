@@ -14,7 +14,11 @@ from aimeet_api.core.middleware import RequestBoundaryMiddleware
 from aimeet_api.core.schemas import ErrorResponse
 from aimeet_api.db.session import create_engine_and_session
 from aimeet_api.modules.auth.router import router as auth_router
+from aimeet_api.modules.intelligence.router import router as intelligence_router
 from aimeet_api.modules.meetings.router import router as meetings_router
+from aimeet_api.modules.rag.providers import RagError
+from aimeet_api.modules.rag.router import router as rag_router
+from aimeet_api.modules.transcription.router import router as transcription_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -29,14 +33,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application = FastAPI(
         title="AI Meet API",
-        version="0.1.0",
-        description="Workspace meeting archive. Foundation layer: text sources and sessions.",
+        version="0.2.0",
+        description="Local meeting archive and offline audio transcription.",
         docs_url="/api/docs" if config.app_env == "development" else None,
         redoc_url=None,
         openapi_url="/api/openapi.json" if config.app_env == "development" else None,
         lifespan=lifespan,
         responses={
-            code: {"model": ErrorResponse} for code in (400, 401, 403, 404, 413, 422, 429, 500)
+            code: {"model": ErrorResponse}
+            for code in (400, 401, 403, 404, 409, 413, 415, 422, 429, 500)
         },
     )
     application.state.settings = config
@@ -51,7 +56,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         expose_headers=["X-Request-ID"],
     )
     application.add_middleware(
-        RequestBoundaryMiddleware, max_request_bytes=config.max_request_bytes
+        RequestBoundaryMiddleware, max_request_bytes=config.max_request_bytes,
+        max_audio_bytes=config.max_audio_bytes,
     )
 
     @application.exception_handler(HTTPException)
@@ -84,6 +90,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=422,
         )
 
+    @application.exception_handler(RagError)
+    async def rag_error(request: Request, exc: RagError):
+        return JSONResponse(
+            {"error": {"code": exc.code, "message": exc.code},
+             "request_id": request.state.request_id},
+            status_code=exc.status_code,
+        )
+
     @application.get("/api/health/live", tags=["Health"], operation_id="getLiveness")
     def live() -> dict[str, str]:
         return {"status": "ok"}
@@ -97,7 +111,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"status": "unavailable"}, status_code=503)
 
     application.include_router(auth_router, prefix="/api/v1")
+    application.include_router(transcription_router, prefix="/api/v1")
     application.include_router(meetings_router, prefix="/api/v1")
+    application.include_router(rag_router, prefix="/api/v1")
+    application.include_router(intelligence_router, prefix="/api/v1")
     return application
 
 

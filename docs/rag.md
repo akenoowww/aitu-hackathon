@@ -1,0 +1,167 @@
+# RAG по встрече: архитектура и запуск
+
+Реализован модуль `apps/api/src/aimeet_api/modules/rag`. Вход — сохранённая стенограмма одной встречи, включая результат локальной транскрибации. Выход — ответ с дословными цитатами и координатами в исходнике. Каждый вопрос независим: история в панели живёт до перезагрузки, сервер пока не хранит разговор и не разрешает ссылки вроде «а он когда?» через предыдущие вопросы.
+
+По запросу владельца продукта дефолт — **OpenAI `gpt-5.6-luna`, `reasoning.effort=max`**. Требование исходного PDF о локальности выполняется отдельным offline-профилем; облачный профиль ему не соответствует. Наличие адаптера не подтверждает доступ к модели на конкретном API-аккаунте.
+
+## Архитектурное решение
+
+Одна PostgreSQL с pgvector хранит документы, embeddings, структурный граф и задания. Для текущего ограничения в 200 000 символов на встречу точный cosine-поиск по заранее выбранной версии встречи практичнее отдельной graph database и ANN-индекса. Не требуется согласовывать состояние нескольких хранилищ, нет потери recall из-за фильтрации после ANN. Это граф структуры документа, не HNSW и не автоматически извлечённый граф сущностей.
+
+```mermaid
+flowchart TB
+    T[Неизменяемый исходный транскрипт] --> V[Версия: SHA-256 исходника + профиль embeddings]
+    V --> Q[Очередь PostgreSQL: lease, retries, fencing]
+    Q --> P[Parent: блок до 3200 символов]
+    P --> C1[Child: фрагмент до 800 символов]
+    P --> C2[Child: следующий фрагмент]
+    C1 <-->|previous / next| C2
+    P <-->|parent / child| C1
+    P <-->|parent / child| C2
+    P --> E[Embeddings обоих уровней]
+    C1 --> E
+    C2 --> E
+    E --> DB[(PostgreSQL + pgvector)]
+    U[Вопрос + авторизованный workspace + meeting ID] --> H[Cosine + BM25 на двух уровнях]
+    DB --> H
+    H --> R[Reciprocal Rank Fusion: top 6]
+    R --> N[Соседи ±1, затем parent promotion]
+    N --> B[Удаление дублей + бюджет контекста]
+    B --> L[OpenAI Responses / Ollama / local OpenAI-compatible]
+    L --> F[Проверка схемы, source IDs и дословных цитат]
+    F --> A[Ответ + цитаты в стенограмме]
+```
+
+### Данные и граф
+
+- `rag_indexes`: ID версии, SHA-256 транскрипта, профиль, состояние/lease/attempts, число узлов. Уникальность `(meeting_id, profile, source_hash)` обеспечивает идемпотентность подготовки.
+- `rag_nodes`: parent/child, порядок, parent ID, текст, embedding, `start_char/end_char`. Координаты — **Unicode code points**, конец не включён; это не UTF-8 bytes и не JS UTF-16 indices. Для преобразования на frontend нужен `Array.from(text)`.
+- `rag_edges`: направленные `parent`, `child`, `previous`, `next`. Соседи существуют и между родительскими блоками. Составные внешние ключи не позволяют связать узлы разных версий.
+- Родители содержат **исходный текст**, а не сгенерированное summary. Для цитат нет потери точности из-за пересказа.
+- Разрез предпочитает границу реплики/абзаца во второй половине окна, затем границу предложения/слова. Длинная неразрывная реплика делится с сохранением точных координат. Тематическая сегментация LLM не заявляется.
+- Embeddings строятся для обоих уровней. Это увеличивает объём embedding-обработки примерно вдвое, но даёт широкие тематические и точечные попадания.
+- Профиль включает provider, endpoint, модель, размерность, ручную revision, размеры окон и версию chunker. Смена LLM не перестраивает индекс. Смена embeddings, endpoint или chunker создаёт отдельную версию. При замене весов под тем же именем необходимо увеличить `RAG_EMBEDDING_REVISION`.
+
+### Поиск и ответ
+
+1. Проверить пользователя/workspace, выбранную встречу и наличие готовой версии для текущего исходника/профиля.
+2. Получить embedding вопроса тем же профилем. Неправильная размерность, NaN/Infinity, нулевая норма, повторённые или неполные индексы ответа провайдера — ошибка, а не пустая выдача.
+3. Выполнить точный cosine-поиск в PostgreSQL и BM25 отдельно по parent/child. BM25 работает с Unicode-токенами RU/KK/EN; морфологический анализ не добавлен.
+4. Объединить рейтинги RRF (`k=60`, вес child=1, parent=0.8). Дефолт: по 24 кандидата, 6 начальных попаданий, cosine threshold 0.25.
+5. Добавить ближайшие соседние узлы, затем по возможности заменить дочерние фрагменты родительскими. Это оставляет место для исправления в следующей реплике на границе блока. Дедупликация удаляет вложенные диапазоны. Порядок финального контекста хронологический.
+6. Ограничить контекст 18 000 символов, учитывая резерв на метаданные. Это ограничение символов, не точная токенизация; параметры требуют калибровки под локальную модель.
+7. Отправить источники как недоверенные данные отдельно от инструкции. Инструментов у отвечающей модели нет. В OpenAI используется `store=false` и strict JSON Schema, без неявного cloud fallback.
+8. Проверить каждую цитату: ID входит в переданные источники, текст дословно существует, координаты вычисляются сервером. Неизвестные ID и выдуманные цитаты отклоняются целиком с `UNGROUNDED_MODEL_RESPONSE`.
+9. При отсутствии источников генерация вообще не вызывается. `insufficient_evidence` означает недостаточность найденного контекста, а не доказанное отсутствие ответа во всей встрече.
+
+**Граница гарантии:** проверка цитаты доказывает её происхождение, но не семантическое следование произвольного утверждения из цитаты. Ошибка в интерпретации, спикере или отрицании всё ещё возможна. Нужна оценка реальных моделей на размеченных встречах. Threshold/RRF/window defaults — инженерная отправная точка, а не измеренный оптимум.
+
+### Надёжность и доступ
+
+Подготовка выполняется отдельным `rag-worker`, не FastAPI BackgroundTasks. Claim использует атомарный compare-and-swap; два worker не владеют одним актуальным lease. Heartbeat продлевает lease перед каждым embedding-батчем из 16 узлов. Lease длиннее provider timeout. Завершившийся старый worker не может опубликовать результат после смены токена. После сбоя процесса lease истекает, задание забирается повторно; retry ограничен, с задержкой для временных ошибок. Пользователь может явно повторить failed-задание.
+
+Сеть вызывается вне длинной транзакции. Все nodes/edges и статус `ready` публикуются одной транзакцией. Полузаполненный индекс не доступен читателям. Источники старого профиля не подмешиваются в новый. Удаление встречи каскадно удаляет её индексы, векторы и связи. Старые версии сохраняются до удаления встречи; отдельного retention/GC пока нет.
+
+Все RAG endpoints проверяют workspace до вызова provider. ID чужой встречи даёт 404. POST требует существующую CSRF-защиту. Provider endpoint задаётся оператором сервера, не HTTP-запросом пользователя. Ключи не возвращаются в API; provider response bodies/исходники не пишутся в ошибки и логи. HTTP-клиент отключает redirects и ambient proxy; ответ ограничен 8 MB. Chat не имеет автоматического retry, чтобы не дублировать дорогую генерацию; worker повторяет только временные ошибки.
+
+## OpenAI — дефолт
+
+В `.env`:
+
+```dotenv
+RAG_OFFLINE=false
+RAG_LLM_PROVIDER=openai
+RAG_LLM_MODEL=gpt-5.6-luna
+RAG_REASONING_EFFORT=max
+OPENAI_API_KEY=your-api-key
+RAG_EMBEDDING_PROVIDER=openai
+RAG_EMBEDDING_MODEL=text-embedding-3-small
+RAG_EMBEDDING_DIMENSIONS=1536
+```
+
+Запуск нового окружения: `make up`. Встреча → «Подготовить встречу для вопросов» → вопрос → раскрыть цитату. API доступен и без ключа, но подготовка/чат вернут `OPENAI_KEY_REQUIRED`; фальшивого ответа нет. При подготовке обеих уровней в OpenAI передаётся вся стенограмма; при вопросе — вопрос и отобранный контекст. Это отражено в интерфейсе до действия.
+
+`max` может заметно увеличивать задержку; Nginx даёт RAG-запросу до 600 секунд, provider timeout — 180 секунд на отдельный вызов. Доступ к API-ключу, модели и биллингу проверяется отдельным live smoke, не по наличию модели в каталоге Codex.
+
+**Обновление существующего окружения:** сначала `make backup` и проверка восстановления. Образ PostgreSQL заменён на закреплённый pgvector 0.8.6 / PostgreSQL 17. Не переходить через major PostgreSQL и не удалять старый volume. Перед обновлением рабочих данных отрепетировать восстановление dump в новый pgvector-кластер: исходный образ Alpine и новый образ могут иметь разные locale/collation. Миграция `0003_meeting_rag` включает расширение `vector`; для внешней управляемой БД это может требовать предварительной установки оператором. Откат `0003 -> 0002` удаляет только данные RAG и оставляет транскрипты/расширение.
+
+## Ollama и полный локальный путь
+
+Для Ollama, уже работающей на хосте Docker Desktop:
+
+```dotenv
+RAG_OFFLINE=true
+RAG_LLM_PROVIDER=ollama
+RAG_LLM_MODEL=qwen3:8b
+RAG_EMBEDDING_PROVIDER=ollama
+RAG_EMBEDDING_MODEL=bge-m3
+RAG_EMBEDDING_DIMENSIONS=1024
+RAG_LOCAL_URL=http://host.docker.internal:11434
+OPENAI_API_KEY=
+```
+
+`qwen3:8b` / `bge-m3` — пример конфигурации, не результат сравнительного теста. Веса должны быть заранее скачаны; фактическая размерность ответа сверяется. Модель должна поддерживать JSON Schema. Для Ollama используются native `/api/embed` (`truncate=false`) и `/api/chat`, чтобы обрезка embeddings не происходила незаметно.
+
+Этот вариант запрещает cloud adapters на уровне приложения, но базовый Compose сохраняет сеть egress. Для изоляции контейнеров используется `compose.rag-offline.yaml` (Compose ≥ 2.24.4):
+
+```sh
+# Предварительно задать OLLAMA_IMAGE (проверенный tag/digest) и OLLAMA_MODELS_DIR
+# с уже подготовленной папкой .ollama, включающей модели и служебный ключ Ollama.
+docker compose -f compose.yaml -f compose.rag-offline.yaml up --build -d
+```
+
+Overlay фиксирует локальные provider settings, очищает OpenAI key у API/RAG-worker и заменяет их сети на internal. Ollama подключена только к internal data-сети, модельный каталог монтируется read-only. Подбор CPU/GPU, конкретного image digest и памяти зависит от оборудования; GPU passthrough в overlay не включён. Во время сборки нужны заранее доступные образы/пакеты; offline inference и offline image build — разные проверки. Для режима без внешней сети нужно также проверить поведение выбранного model server, наличие весов и реальный сетевой трафик. Веб-сервис сохраняет edge-сеть для публикации UI.
+
+## Локальный OpenAI-совместимый сервер
+
+```dotenv
+RAG_OFFLINE=true
+RAG_LLM_PROVIDER=local_openai
+RAG_LLM_MODEL=your-served-chat-model
+RAG_LOCAL_URL=http://127.0.0.1:8001/v1
+RAG_EMBEDDING_PROVIDER=local_openai
+RAG_EMBEDDING_MODEL=your-served-embedding-model
+RAG_EMBEDDING_LOCAL_URL=http://127.0.0.1:8002/v1
+RAG_EMBEDDING_DIMENSIONS=1024
+```
+
+Это пример для запуска API непосредственно на хосте; внутри Docker `127.0.0.1` указывает на сам контейнер. Используйте Docker service name/доступный частный IP или `host.docker.internal`. Отдельный embedding endpoint позволяет использовать два инстанса vLLM/llama.cpp. Требуются `/embeddings` и `/chat/completions` с `response_format=json_schema`; отсутствие поддержки — явная ошибка. `RAG_LOCAL_API_KEY` при необходимости используется для обоих локальных endpoint. URL embeddings при отсутствии наследует `RAG_LOCAL_URL`.
+
+Offline-настройки отвергают облачные provider и публичные hostname. Локальный OpenAI-совместимый сервер сам должен исполнять модели локально. Настройка `local_openai` сама по себе не доказывает, что произвольный сторонний proxy не пересылает данные.
+
+## API
+
+| Метод | Путь после `/api/v1` | Назначение |
+| --- | --- | --- |
+| GET | `/rag/config` | Публичная часть настроек без секретов |
+| POST | `/meetings/{id}/rag/index` | Идемпотентная постановка на подготовку / retry failed |
+| GET | `/meetings/{id}/rag/index` | Состояние актуального профиля и исходника |
+| GET | `/meetings/{id}/rag/graph` | Узлы/связи/диапазоны без embeddings и текста |
+| POST | `/meetings/{id}/rag/search` | Найденный контекст без генерации |
+| POST | `/meetings/{id}/rag/chat` | Ответ с проверенными цитатами |
+
+Поиск и чат принимают `{"question":"Какой бюджет согласовали?"}`. Полный контракт генерируется в `packages/contracts/openapi.json`. Ошибки provider отличаются от отсутствия evidence; UI переводит коды в понятные сообщения и сохраняет вопрос после ошибки.
+
+## Проверки
+
+```sh
+cd apps/api
+uv sync --frozen --group dev
+uv run ruff check .
+uv run pytest
+# Для native pgvector и изолированных схем: отдельная тестовая PostgreSQL с vector extension
+TEST_DATABASE_URL=postgresql+psycopg://... uv run pytest
+DATABASE_URL=postgresql+psycopg://... uv run alembic upgrade head
+DATABASE_URL=postgresql+psycopg://... uv run alembic check
+```
+
+Тесты `test_rag.py` / `test_rag_providers.py` проверяют lossless chunking, граф/соседей через границу parent, бюджет/дедупликацию, корректировки, отсутствие evidence, точные цитаты, tenant isolation, CAS/lease fencing, atomic publication, retries, версии исходника/модели, каскадное удаление, OpenAI Luna/max wire contract, локальные API, некорректные vectors/envelopes, redaction и запрет redirect/cloud fallback. Провайдеры в этих тестах заменены детерминированными double/HTTP transport. Это проверка системы, а не измерение семантического качества LLM.
+
+Следующий gate перед эксплуатацией: на настоящих моделях проверить RU/KK/EN, смену спикера, отрицания, исправления сумм/сроков и вопросы без ответа; измерить source recall, точность смысловой опоры, p50/p95 latency и стоимость. Не добавлять cross-encoder, отдельную graph database или multi-agent loop до измеренного сбоя текущего retrieval. Общий executive summary всей встречи требует отдельного полного прохода по блокам: top-k RAG не гарантирует полноту протокола.
+
+## Источники решений
+
+- [OpenAI GPT-5.6 Luna: model ID, max reasoning, endpoints](https://developers.openai.com/api/docs/models/gpt-5.6-luna).
+- [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+- [pgvector: exact/approximate search, filtering, vector dimensions](https://github.com/pgvector/pgvector).
+- [Ollama embeddings API](https://docs.ollama.com/api/embed) и [chat API](https://docs.ollama.com/api/chat).

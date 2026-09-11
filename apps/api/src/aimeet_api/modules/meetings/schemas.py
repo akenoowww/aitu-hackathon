@@ -29,11 +29,12 @@ class MeetingSummary(BaseModel):
     id: uuid.UUID
     title: str
     language: Literal["auto", "ru", "kk", "en"]
-    status: Literal["draft"]
-    source_type: Literal["text"]
+    status: Literal["draft", "transcribed"]
+    source_type: Literal["text", "audio"]
     created_at: datetime
     updated_at: datetime
     transcript_length: int
+    transcription: "TranscriptionOutput | None"
 
     @field_serializer("created_at", "updated_at")
     def serialize_datetime(self, value: datetime) -> str:
@@ -43,6 +44,24 @@ class MeetingSummary(BaseModel):
 
 class MeetingDetail(MeetingSummary):
     transcript: str
+    audio_filename: str | None
+    audio_bytes: int | None
+    segments: list["TranscriptSegment"] | None
+
+
+class TranscriptSegment(BaseModel):
+    start: float = Field(ge=0, allow_inf_nan=False)
+    end: float = Field(ge=0, allow_inf_nan=False)
+    text: str
+
+
+class TranscriptionOutput(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    progress: int
+    error_code: str | None
+    detected_language: str | None
+    duration_seconds: float | None
 
 
 class MeetingList(BaseModel):
