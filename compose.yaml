@@ -1,0 +1,108 @@
+name: aimeet
+
+x-api: &api
+  image: aimeet-api:local
+  build:
+    context: .
+    dockerfile: infra/docker/api.Dockerfile
+  environment: &api-env
+    DATABASE_URL: postgresql+psycopg://aimeet:${POSTGRES_PASSWORD:?Run scripts/init-local.py}@postgres:5432/aimeet
+    APP_ENV: ${APP_ENV:-development}
+    COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8787,http://127.0.0.1:8787}
+  networks: [data]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: ['/tmp:size=64m,mode=1777']
+  init: true
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: aimeet
+      POSTGRES_DB: aimeet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run scripts/init-local.py}
+    volumes: [postgres-data:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U aimeet -d aimeet]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    shm_size: 128mb
+    mem_limit: 512m
+    logging: &logging
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+
+  migrate:
+    <<: *api
+    command: [.venv/bin/alembic, upgrade, head]
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: 'no'
+    logging: *logging
+
+  bootstrap:
+    <<: *api
+    profiles: [tools]
+    environment:
+      <<: *api-env
+      BOOTSTRAP_EMAIL: ${BOOTSTRAP_EMAIL:?Set BOOTSTRAP_EMAIL}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:?Set BOOTSTRAP_PASSWORD}
+    command: [.venv/bin/python, -m, aimeet_api.bootstrap]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: 'no'
+
+  api:
+    <<: *api
+    command: [.venv/bin/uvicorn, aimeet_api.main:app, --host, 0.0.0.0, --port, '8000', --no-access-log, --no-proxy-headers]
+    networks: [data, ingress]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, .venv/bin/python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 512m
+    logging: *logging
+
+  web:
+    image: aimeet-web:local
+    build:
+      context: .
+      dockerfile: infra/docker/web.Dockerfile
+    ports: ['127.0.0.1:${WEB_PORT:-8787}:8080']
+    networks: [edge, ingress]
+    depends_on:
+      api: {condition: service_healthy}
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: ['/tmp:size=32m,mode=1777']
+    healthcheck:
+      test: [CMD, wget, -q, --spider, 'http://127.0.0.1:8080/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
+
+volumes:
+  postgres-data:
+
+networks:
+  edge:
+  ingress:
+    internal: true
+  data:
+    internal: true

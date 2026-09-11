@@ -1,0 +1,14 @@
+.git
+.frontend-workbench
+.env
+.env.*
+.local
+backups
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/test-results
+**/playwright-report
