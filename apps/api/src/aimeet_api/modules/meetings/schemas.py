@@ -53,6 +53,7 @@ class TranscriptSegment(BaseModel):
     start: float = Field(ge=0, allow_inf_nan=False)
     end: float = Field(ge=0, allow_inf_nan=False)
     text: str
+    speaker: str | None = None
 
 
 class TranscriptionOutput(BaseModel):

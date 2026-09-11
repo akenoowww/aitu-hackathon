@@ -74,6 +74,7 @@ def process_audio(factory, settings, chunk, model):
             audio,
             language=None if language == "auto" else language,
             task="transcribe",
+            multilingual=True,
             beam_size=1,
             vad_filter=True,
             condition_on_previous_text=False,

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     stt_device: Literal["cpu", "cuda"] = "cpu"
     stt_compute_type: Literal["int8", "float16", "int8_float16", "float32"] = "int8"
     stt_cpu_threads: int = Field(default=4, ge=1, le=64)
+    stt_diarization_enabled: bool = True
+    stt_diarization_model_path: Path = Path("models/speaker-diarization")
+    stt_diarization_threshold: float = Field(default=0.9, gt=0, lt=2)
     stt_timeout_seconds: int = Field(default=14_400, ge=30, le=86_400)
     job_lease_seconds: int = Field(default=60, ge=15, le=600)
     job_max_attempts: int = Field(default=3, ge=1, le=5)

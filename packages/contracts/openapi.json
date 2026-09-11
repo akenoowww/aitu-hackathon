@@ -2431,6 +2431,24 @@
             }
           },
           {
+            "name": "num_speakers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 32,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Num Speakers"
+            }
+          },
+          {
             "name": "x-requested-with",
             "in": "header",
             "required": false,
@@ -10281,6 +10299,17 @@
           "text": {
             "type": "string",
             "title": "Text"
+          },
+          "speaker": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speaker"
           }
         },
         "type": "object",
