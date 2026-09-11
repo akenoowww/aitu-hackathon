@@ -2,9 +2,11 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import delete
 
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
 from aimeet_api.db.models import Meeting
+from aimeet_api.modules.live.models import LiveRoom
 from aimeet_api.modules.meetings.repository import MeetingRepository
 from aimeet_api.modules.meetings.schemas import (
     MeetingCreate,
@@ -76,6 +78,7 @@ def delete_meeting(
     meeting = MeetingRepository(db, user.workspace_id).get(meeting_id)
     if meeting is None:
         raise HTTPException(status_code=404, detail="Meeting not found")
+    db.execute(delete(LiveRoom).where(LiveRoom.meeting_id == meeting_id))
     db.delete(meeting)
     db.commit()
     audio_path(settings, meeting_id).unlink(missing_ok=True)

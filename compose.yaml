@@ -38,6 +38,12 @@ x-api: &api
     AUDIO_DIR: /data/audio
     STT_MODEL_PATH: /models/${STT_MODEL_DIR:-whisper-small}
     STT_CPU_THREADS: ${STT_CPU_THREADS:-4}
+    LIVEKIT_API_URL: http://livekit:7880
+    LIVEKIT_PUBLIC_URL: /livekit
+    LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-soyle-local}
+    LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?Run make init}
+    LIVE_ANALYSIS_INTERVAL: ${LIVE_ANALYSIS_INTERVAL:-12}
+    LIVE_ANALYSIS_REASONING: ${LIVE_ANALYSIS_REASONING:-low}
     HF_HUB_OFFLINE: '1'
     HF_HUB_DISABLE_TELEMETRY: '1'
     TRANSFORMERS_OFFLINE: '1'
@@ -92,7 +98,7 @@ services:
   api:
     <<: *api
     command: [.venv/bin/uvicorn, aimeet_api.main:app, --host, 0.0.0.0, --port, '8000', --no-access-log, --no-proxy-headers]
-    networks: [data, ingress, ai-egress]
+    networks: [data, ingress, ai-egress, media]
     extra_hosts: [host.docker.internal:host-gateway]
     volumes: [audio-data:/data/audio]
     depends_on:
@@ -136,6 +142,61 @@ services:
     pids_limit: 128
     logging: *logging
 
+  livekit:
+    image: livekit/livekit-server:v1.13.6@sha256:e37d68f172556d02aa77968b9fc55ef481468c0315fa38e4fa6c56ce72e3a815
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        bind_addresses: ["0.0.0.0"]
+        keys:
+          ${LIVEKIT_API_KEY:-soyle-local}: ${LIVEKIT_API_SECRET:?Run make init}
+        rtc:
+          tcp_port: 7881
+          udp_port: 7882
+          use_external_ip: false
+          node_ip: ${LIVEKIT_NODE_IP:-127.0.0.1}
+          enable_loopback_candidate: false
+        room:
+          auto_create: false
+          departure_timeout: 300
+        logging:
+          level: warn
+    ports:
+      - '127.0.0.1:7881:7881/tcp'
+      - '127.0.0.1:7882:7882/udp'
+    networks: [media]
+    restart: unless-stopped
+    mem_limit: 512m
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    logging: *logging
+
+  live-speech-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.live.worker, speech]
+    volumes:
+      - audio-data:/data/audio
+      - ./models:/models:ro
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    mem_limit: ${STT_MEMORY_LIMIT:-4g}
+    cpus: ${STT_CPU_LIMIT:-4}
+    pids_limit: 128
+    logging: *logging
+
+  live-analysis-worker:
+    <<: *api
+    command: [.venv/bin/python, -m, aimeet_api.modules.live.worker, analysis]
+    networks: [data, ai-egress]
+    extra_hosts: [host.docker.internal:host-gateway]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *logging
+
   intelligence-worker:
     <<: *api
     command: [.venv/bin/python, -m, aimeet_api.modules.intelligence.worker]
@@ -155,7 +216,7 @@ services:
       context: .
       dockerfile: infra/docker/web.Dockerfile
     ports: ['127.0.0.1:${WEB_PORT:-8787}:8080']
-    networks: [edge, ingress]
+    networks: [edge, ingress, media]
     depends_on:
       api: {condition: service_healthy}
     security_opt: [no-new-privileges:true]
@@ -176,6 +237,7 @@ volumes:
   audio-data:
 
 networks:
+  media:
   ai-egress:
   edge:
   ingress:

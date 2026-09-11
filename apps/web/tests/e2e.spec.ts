@@ -251,3 +251,78 @@ test('authenticated meeting lifecycle persists text and works on mobile', async 
     }
   }
 });
+
+test('workspace chat searches existing meetings without manual preparation', async ({ page }) => {
+  const userId = randomUUID();
+  const meetingId = randomUUID();
+  const nodeId = randomUUID();
+  let indexRequests = 0;
+  let searches = 0;
+  let polls = 0;
+  let ready = false;
+  const coverage = () => ({ total: 1, ready: ready ? 1 : 0, pending: !ready && indexRequests ? 1 : 0,
+    failed: 0, not_indexed: !ready && !indexRequests ? 1 : 0, unavailable: 0 });
+  await page.route('**/api/v1/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (path === '/api/v1/auth/me') return route.fulfill({ json: { id: userId, email: 'qa@example.com', display_name: 'QA' } });
+    if (path === '/api/v1/rag/config') return route.fulfill({ json: { offline: true, llm_provider: 'ollama', llm_model: 'test', reasoning_effort: 'low', embedding_provider: 'ollama', embedding_model: 'test', embedding_dimensions: 3, cloud_configured: false } });
+    if (path === '/api/v1/rag/index') {
+      if (method === 'POST') indexRequests++;
+      else if (indexRequests && ++polls >= 2) ready = true;
+      return route.fulfill({ status: method === 'POST' ? 202 : 200, json: coverage() });
+    }
+    if (path === '/api/v1/rag/chat') {
+      expect(ready).toBe(true);
+      if (route.request().postDataJSON().question === 'у нас вообще встречи были?') {
+        return route.fulfill({ json: {
+          status: 'answered', answer: 'Да, в архиве есть одна встреча.', coverage: coverage(), sources: [],
+          catalog_sources: [{ source_id: 'M0', text: 'Сохранено встреч: 1.', meeting_id: null, meeting_title: null }],
+          claims: [{ text: 'Да, в архиве есть одна встреча.', citations: [{ kind: 'catalog', source_id: 'M0', quote: 'Сохранено встреч: 1.' }] }],
+        } });
+      }
+      expect(route.request().postDataJSON().question).toContain('бюджет');
+      searches++;
+      return route.fulfill({ json: {
+        status: 'answered', answer: 'Обсуждали на планировании.', coverage: coverage(),
+        claims: [{ text: 'Обсуждали на планировании.', citations: [{ source_id: 'S1', node_id: nodeId, start_char: 0, end_char: 19, quote: 'Бюджет согласовали.' }] }],
+        sources: [{ source_id: 'S1', node_id: nodeId, parent_id: null, start_char: 0, end_char: 19, text: 'Бюджет согласовали.', reason: 'hit', meeting_id: meetingId, meeting_title: 'Планирование', meeting_created_at: '2026-09-11T09:00:00Z' }],
+      } });
+    }
+    throw new Error(`Unexpected request: ${method} ${path}`);
+  });
+  await page.goto('/chat');
+  await expect(page.getByRole('heading', { name: 'Чат', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Подготовить|Добавить встречу/ })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Добавить встречу' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'На какой встрече обсуждали бюджет?' }).click();
+  const send = page.getByRole('button', { name: 'Отправить вопрос' });
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(page.getByText('Ищем по стенограммам встреч…')).toBeVisible();
+  await expect(page.getByText('Обсуждали на планировании.')).toBeVisible();
+  expect(indexRequests).toBe(1);
+  expect(searches).toBe(1);
+  await page.locator('.workspace-chat-source summary').click();
+  await expect(page.locator('blockquote')).toHaveText('Бюджет согласовали.');
+  await expect(page.getByRole('link', { name: 'Открыть встречу' })).toHaveAttribute('href', `/meetings/${meetingId}`);
+  await page.getByRole('textbox', { name: 'Вопрос по всем встречам' }).fill('Какой бюджет?');
+  await send.click();
+  await expect(page.locator('.workspace-chat-turn')).toHaveCount(2);
+  expect(searches).toBe(2);
+  expect(indexRequests).toBe(1);
+  await page.getByRole('textbox', { name: 'Вопрос по всем встречам' }).fill('у нас вообще встречи были?');
+  await send.click();
+  await expect(page.getByText('Да, в архиве есть одна встреча.')).toBeVisible();
+  await page.getByText('Список встреч', { exact: true }).click();
+  await expect(page.getByRole('link', { name: 'Все встречи', exact: true })).toHaveAttribute('href', /\/meetings/);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const header = await page.locator('.workspace-chat-header').boundingBox();
+  const conversation = await page.locator('.workspace-chat-conversation').boundingBox();
+  const composer = await page.locator('.workspace-chat-composer-wrap').boundingBox();
+  expect(header!.x).toBeLessThan(320);
+  expect(Math.abs(header!.x - conversation!.x)).toBeLessThan(2);
+  expect(Math.abs(header!.x - composer!.x)).toBeLessThan(2);
+  await page.setViewportSize({ width: 320, height: 740 });
+  await expectNoHorizontalOverflow(page);
+});

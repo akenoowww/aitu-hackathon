@@ -37,13 +37,17 @@ def lexical_scores(nodes: list[RagNode], question: str) -> dict:
 
 
 def retrieve(db: Session, index_id, question: str, vector: list[float], config: Settings):
+    return retrieve_many(db, [index_id], question, vector, config)
+
+
+def retrieve_many(db: Session, index_ids, question: str, vector: list[float], config: Settings):
     # Maximum transcript length is 200k code points; scoped exact search preserves recall.
     nodes = list(
         db.scalars(
             select(RagNode)
             .options(defer(RagNode.embedding))
             .where(
-                RagNode.index_id == index_id,
+                RagNode.index_id.in_(index_ids),
             )
             .order_by(RagNode.start_char, RagNode.kind)
         )
@@ -59,7 +63,7 @@ def retrieve(db: Session, index_id, question: str, vector: list[float], config: 
             rows = db.execute(
                 select(RagNode.id, distance)
                 .where(
-                    RagNode.index_id == index_id,
+                    RagNode.index_id.in_(index_ids),
                     RagNode.kind == kind,
                 )
                 .order_by(distance, RagNode.start_char)
@@ -93,7 +97,7 @@ def retrieve(db: Session, index_id, question: str, vector: list[float], config: 
         : config.rag_top_k
     ]
     adjacency = defaultdict(list)
-    for edge in db.scalars(select(RagEdge).where(RagEdge.index_id == index_id)):
+    for edge in db.scalars(select(RagEdge).where(RagEdge.index_id.in_(index_ids))):
         adjacency[(edge.source_id, edge.relation)].append(edge.target_id)
 
     chosen: dict = {}
@@ -104,14 +108,18 @@ def retrieve(db: Session, index_id, question: str, vector: list[float], config: 
         node = by_id[node_id]
         # Parent promotion replaces contained hits without duplicating their text.
         if any(
-            existing.start_char <= node.start_char and existing.end_char >= node.end_char
+            existing.index_id == node.index_id
+            and existing.start_char <= node.start_char
+            and existing.end_char >= node.end_char
             for existing, _ in chosen.values()
         ):
             return
         contained = [
             key
             for key, (existing, _) in chosen.items()
-            if node.start_char <= existing.start_char and node.end_char >= existing.end_char
+            if existing.index_id == node.index_id
+            and node.start_char <= existing.start_char
+            and node.end_char >= existing.end_char
         ]
         freed = sum(len(chosen[key][0].text) + 160 for key in contained)
         cost = len(node.text) + 160  # Reserve space for source labels/offset metadata.

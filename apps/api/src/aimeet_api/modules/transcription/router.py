@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from sqlalchemy import update
 
 from aimeet_api.core.dependencies import CurrentUser, DatabaseDep, SettingsDep, require_csrf
@@ -76,6 +77,22 @@ def owned_audio(db, user, meeting_id):
     return meeting
 
 
+@router.get("/{meeting_id}/audio", operation_id="getMeetingAudio")
+def read_audio(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep, settings: SettingsDep):
+    meeting = owned_audio(db, user, meeting_id)
+    source = audio_path(settings, meeting_id)
+    if not source.is_file():
+        raise HTTPException(404, "Audio source not found")
+    media = {".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4"}
+    return FileResponse(
+        source,
+        media_type=media.get(
+            Path(meeting.audio_filename or "").suffix.lower(), "application/octet-stream"
+        ),
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.post(
     "/{meeting_id}/transcription/cancel",
     response_model=MeetingDetail,
@@ -123,10 +140,17 @@ def retry(meeting_id: uuid.UUID, user: CurrentUser, db: DatabaseDep, settings: S
             lease_token=None,
             lease_until=None,
             config=None,
+            detected_language=None,
+            duration_seconds=None,
         )
     )
     if result.rowcount != 1:
         raise HTTPException(409, "Transcription cannot be retried in its current state")
+    db.execute(
+        update(Meeting)
+        .where(Meeting.id == meeting_id)
+        .values(transcript="", transcript_length=0, segments=None, status="draft")
+    )
     db.commit()
     db.expire_all()
     return MeetingRepository(db, user.workspace_id).get(meeting_id)

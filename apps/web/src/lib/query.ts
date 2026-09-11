@@ -25,5 +25,5 @@ export const meetingsQuery = (q: string, offset: number) => queryOptions({
 })
 export const meetingQuery = (id: string) => queryOptions({
   queryKey: ['meetings', 'detail', id], queryFn: ({ signal }) => api.meeting(id, signal),
-  refetchInterval: (query) => ['queued', 'running'].includes(query.state.data?.transcription?.status ?? '') ? 2000 : false,
+  refetchInterval: (query) => ['queued', 'running'].includes(query.state.data?.transcription?.status ?? '') ? 1500 : false,
 })

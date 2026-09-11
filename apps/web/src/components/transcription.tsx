@@ -17,7 +17,7 @@ const errors: Record<string, string> = {
   processing_timeout: 'Распознавание заняло слишком много времени. Попробуйте запись меньшей длительности.',
   worker_interrupted: 'Распознавание прервалось. Запись сохранена — можно повторить попытку.',
 }
-export function Transcription({ meeting }: { meeting: MeetingDetail }) {
+export function Transcription({ meeting, compact = false }: { meeting: MeetingDetail; compact?: boolean }) {
   const action = useMutation({
     mutationFn: (kind: 'cancel' | 'retry') => kind === 'cancel' ? api.cancelTranscription(meeting.id) : api.retryTranscription(meeting.id),
     onSuccess: async (result) => {
@@ -28,11 +28,12 @@ export function Transcription({ meeting }: { meeting: MeetingDetail }) {
   const job = meeting.transcription
   if (!job) return null
   const active = job.status === 'queued' || job.status === 'running'
+  if (compact && job.status === 'succeeded') return null
   return <section className="transcription-state" aria-label="Распознавание аудио">
-    <Text size="sm" className="audio-filename">{meeting.audio_filename}</Text>
+    {!compact && <Text size="sm" className="audio-filename">{meeting.audio_filename}</Text>}
     {active && <>
-      <Text size="sm" role="status">{job.status === 'queued' ? 'Запись ожидает распознавания. Можно вернуться к ней позже.' : `Распознаём запись · ${job.progress}%`}</Text>
-      {job.status === 'running' && <Progress size="md" value={job.progress} aria-label="Прогресс распознавания" className="transcription-progress" />}
+      {!compact && <Text size="sm" role="status">{job.status === 'queued' ? 'Запись ожидает распознавания. Можно вернуться к ней позже.' : `Распознаём запись · ${job.progress}%`}</Text>}
+      {!compact && job.status === 'running' && <Progress size="md" value={job.progress} aria-label="Прогресс распознавания" className="transcription-progress" />}
       <Button variant="default" color="gray" disabled={action.isPending} onClick={() => action.mutate('cancel')}>Отменить распознавание</Button>
     </>}
     {job.status === 'failed' && <InlineError>{errors[job.error_code ?? ''] ?? 'Не удалось распознать запись. Попробуйте ещё раз.'}</InlineError>}

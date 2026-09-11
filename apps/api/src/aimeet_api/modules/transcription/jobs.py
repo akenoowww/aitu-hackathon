@@ -6,6 +6,8 @@ from sqlalchemy import and_, or_, select, update
 
 from aimeet_api.core.config import Settings
 from aimeet_api.db.models import Meeting, TranscriptionJob, utcnow
+from aimeet_api.modules.intelligence.models import MeetingBoard
+from aimeet_api.modules.intelligence.service import digest
 
 
 @dataclass(frozen=True)
@@ -66,8 +68,16 @@ def claim_next(factory, settings: Settings) -> Claim | None:
                 lease_token=token,
                 lease_until=now + timedelta(seconds=settings.job_lease_seconds),
                 error_code=None,
+                detected_language=None,
+                duration_seconds=None,
             )
         )
+        if result.rowcount == 1:
+            db.execute(
+                update(Meeting)
+                .where(Meeting.id == job.meeting_id)
+                .values(transcript="", transcript_length=0, segments=None, status="draft")
+            )
         db.commit()
         return Claim(job.id, job.meeting_id, token) if result.rowcount == 1 else None
 
@@ -81,17 +91,38 @@ def owns(claim: Claim):
     )
 
 
-def heartbeat(factory, settings: Settings, claim: Claim, progress: int) -> bool:
+def heartbeat(
+    factory, settings: Settings, claim: Claim, progress: int, *, partial: dict | None = None
+) -> bool:
     with factory() as db:
+        values = {
+            "lease_until": utcnow() + timedelta(seconds=settings.job_lease_seconds),
+            "progress": min(99, max(0, progress)),
+        }
+        if partial is not None:
+            values.update(
+                detected_language=partial.get("detected_language"),
+                duration_seconds=partial.get("duration_seconds"),
+            )
         result = db.execute(
             update(TranscriptionJob)
             .execution_options(synchronize_session=False)
             .where(owns(claim))
-            .values(
-                lease_until=utcnow() + timedelta(seconds=settings.job_lease_seconds),
-                progress=min(99, max(0, progress)),
-            )
+            .values(**values)
         )
+        if result.rowcount != 1:
+            db.rollback()
+            return False
+        if partial is not None:
+            db.execute(
+                update(Meeting)
+                .where(Meeting.id == claim.meeting_id)
+                .values(
+                    transcript=partial["transcript"],
+                    transcript_length=len(partial["transcript"]),
+                    segments=partial["segments"],
+                )
+            )
         db.commit()
         return result.rowcount == 1
 
@@ -130,5 +161,25 @@ def finish(factory, claim: Claim, *, result: dict | None = None, error: str | No
                     status="transcribed",
                 )
             )
+            # Queue analysis in the same transaction as the final transcript. It must
+            # continue even when the browser closes before recognition completes.
+            board = db.get(MeetingBoard, claim.meeting_id)
+            if board is None:
+                db.add(
+                    MeetingBoard(
+                        meeting_id=claim.meeting_id,
+                        status="queued",
+                        source_hash=digest(result["transcript"]),
+                    )
+                )
+            elif board.status == "idle":
+                db.execute(
+                    update(MeetingBoard)
+                    .where(
+                        MeetingBoard.meeting_id == claim.meeting_id,
+                        MeetingBoard.status == "idle",
+                    )
+                    .values(status="queued", source_hash=digest(result["transcript"]))
+                )
         db.commit()
         return True

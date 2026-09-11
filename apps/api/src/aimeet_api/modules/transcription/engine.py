@@ -85,6 +85,7 @@ def transcribe(path: Path, config: dict, emit) -> dict:
         local_files_only=True,
     )
     duration = len(audio) / 16000
+    emit({"duration_seconds": round(duration, 3)})
     segments, info = model.transcribe(
         audio,
         language=None if config["language"] == "auto" else config["language"],
@@ -95,6 +96,7 @@ def transcribe(path: Path, config: dict, emit) -> dict:
         word_timestamps=False,
     )
     output = []
+    emit({"detected_language": info.language})
     total_chars = 0
     last_progress = 2
     for segment in segments:
@@ -106,6 +108,7 @@ def transcribe(path: Path, config: dict, emit) -> dict:
             start = max(0.0, min(float(segment.start), duration))
             end = max(start, min(float(segment.end), duration))
             output.append({"start": round(start, 3), "end": round(end, 3), "text": text})
+            emit({"segment": output[-1]})
         progress = min(99, max(2, int(segment.end / duration * 100)))
         if progress > last_progress:
             emit({"progress": progress})

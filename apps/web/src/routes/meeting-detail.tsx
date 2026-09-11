@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react'
+import { MeetingBoard } from '../components/board/meeting-board'
 import { MeetingChat } from '../components/rag/meeting-chat'
 import { getRouteApi, Link, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { Alert, Anchor, Badge, Button, Modal, Text, Title } from '@mantine/core'
-import { ArrowLeft, Info, Trash2 } from 'lucide-react'
+import { Anchor, Badge, Button, Modal, Text, Title } from '@mantine/core'
+import { ArrowLeft, Trash2 } from 'lucide-react'
 import { api, ApiError, errorMessage } from '../lib/api'
 import { meetingQuery, queryClient } from '../lib/query'
 import { Disclosure, ErrorState, InlineError, LoadingState, PageHeading } from '../components/ui'
+import { AudioWorkspace } from '../components/audio-workspace'
 import { Transcription } from '../components/transcription'
 import { meetingStatus, timestamp } from '../lib/transcription'
 
@@ -37,7 +39,7 @@ export function MeetingDetailPage() {
     description={errorMessage(meeting.error)} onRetry={() => void meeting.refetch()}>
     <Button variant="default" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}>К встречам</Button>
   </ErrorState></div>
-  return <div className="page">
+  return <div className={`page ${meeting.data.source_type === 'audio' ? 'audio-meeting-page' : ''}`}>
     <Anchor className="page-back" renderRoot={(props) => <Link {...props} to="/meetings" search={{ q: '', offset: 0 }} />}><ArrowLeft size={19} aria-hidden="true" />К встречам</Anchor>
     <header className="page-header">
       <PageHeading title={meeting.data.title}><Badge color="gray" variant="light" radius="xl" tt="none">{meetingStatus(meeting.data)}</Badge></PageHeading>
@@ -48,7 +50,7 @@ export function MeetingDetailPage() {
         <Modal.Content className="delete-dialog">
           <Modal.Header><Modal.Title>Удалить встречу?</Modal.Title></Modal.Header>
           <Modal.Body>
-            <Text>Встреча «{meeting.data.title}», её аудиозапись и стенограмма будут удалены. Это действие нельзя отменить.</Text>
+            <Text>Встреча «{meeting.data.title}», её аудиозапись, стенограмма, итоги и карточки будут удалены. Это действие нельзя отменить.</Text>
             {remove.isError && <InlineError>{errorMessage(remove.error, 'Не удалось удалить встречу. Попробуйте ещё раз.')}</InlineError>}
             <div className="dialog-actions">
               <Button variant="default" data-autofocus disabled={remove.isPending} onClick={closeDialog}>Отмена</Button>
@@ -58,6 +60,9 @@ export function MeetingDetailPage() {
         </Modal.Content>
       </Modal.Root>
     </header>
+    {meeting.data.source_type === 'audio' ? <AudioWorkspace key={meetingId} meeting={meeting.data} /> : <>
+    <MeetingBoard key={`board-${meetingId}`} meetingId={meetingId} title={meeting.data.title} meeting={meeting.data}
+      canGenerate={!!meeting.data.transcript.trim()} />
     <article className="transcript-panel" aria-labelledby="transcript-title">
       <header className="section-header"><Title order={2} size="h3" id="transcript-title">Стенограмма</Title></header>
       <Transcription meeting={meeting.data} />
@@ -67,8 +72,8 @@ export function MeetingDetailPage() {
           <time>{timestamp(segment.start)}</time><p>{segment.text}</p>
         </li>)}</ol>
       </Disclosure>}
-      <Alert color="gray" icon={<Info size={22} aria-hidden="true" />} className="analysis-panel">Генерация протокола пока недоступна</Alert>
     </article>
-    {meeting.data.transcript.trim() && <MeetingChat key={meetingId} meetingId={meetingId} />}
+    </>}
+    {meeting.data.transcript.trim() && (meeting.data.source_type === 'text' || meeting.data.status === 'transcribed') && <MeetingChat key={meetingId} meetingId={meetingId} />}
   </div>
 }

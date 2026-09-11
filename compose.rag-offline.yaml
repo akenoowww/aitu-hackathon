@@ -25,6 +25,11 @@ services:
       RAG_LOCAL_URL: http://ollama:11434
       RAG_EMBEDDING_LOCAL_URL: http://ollama:11434
       OPENAI_API_KEY: ''
+  intelligence-worker:
+    environment:
+      INTELLIGENCE_LOCAL_URL: http://ollama:11434
+      INTELLIGENCE_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
+      OPENAI_API_KEY: ''
   ollama:
     image: ${OLLAMA_IMAGE:?Set OLLAMA_IMAGE to your validated Ollama image tag or digest}
     environment:

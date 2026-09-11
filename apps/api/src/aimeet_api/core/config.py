@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     stt_timeout_seconds: int = Field(default=14_400, ge=30, le=86_400)
     job_lease_seconds: int = Field(default=60, ge=15, le=600)
     job_max_attempts: int = Field(default=3, ge=1, le=5)
+    livekit_api_url: str = "http://livekit:7880"
+    livekit_public_url: str = "/livekit"
+    livekit_api_key: str = "soyle-local"
+    livekit_api_secret: SecretStr = SecretStr("")
+    live_max_participants: int = Field(default=12, ge=2, le=32)
+    live_max_minutes: int = Field(default=120, ge=1, le=240)
+    live_analysis_interval: int = Field(default=12, ge=5, le=60)
+    live_analysis_reasoning: str = "low"
 
     intelligence_model: str = "qwen3:8b"
     intelligence_local_url: str = "http://host.docker.internal:11434"

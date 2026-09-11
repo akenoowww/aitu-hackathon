@@ -68,14 +68,19 @@ def run_job(factory, settings, claim, stop=lambda: False):
     started = time.monotonic()
     last_heartbeat = 0.0
     progress = 0
+    partial = {"transcript": "", "segments": []}
+    dirty = False
     try:
         while not stop():
             if time.monotonic() - started > settings.stt_timeout_seconds:
                 finish(factory, claim, error="processing_timeout")
                 return
             if time.monotonic() - last_heartbeat >= 2:
-                if not heartbeat(factory, settings, claim, progress):
+                if not heartbeat(
+                    factory, settings, claim, progress, partial=partial if dirty else None
+                ):
                     return  # Cancelled, deleted, or another worker owns the replacement lease.
+                dirty = False
                 last_heartbeat = time.monotonic()
             if reader.poll(0.25):
                 try:
@@ -87,9 +92,18 @@ def run_job(factory, settings, claim, stop=lambda: False):
                     finish(factory, claim, result=message["result"])
                     return
                 if "error" in message:
+                    heartbeat(factory, settings, claim, progress, partial=partial)
                     finish(factory, claim, error=message["error"])
                     return
                 progress = message.get("progress", progress)
+                if "segment" in message:
+                    partial["segments"].append(message["segment"])
+                    partial["transcript"] = "\n".join(row["text"] for row in partial["segments"])
+                    dirty = True
+                for key in ("detected_language", "duration_seconds"):
+                    if key in message:
+                        partial[key] = message[key]
+                        dirty = True
             elif not process.is_alive():
                 finish(factory, claim, error="processing_failed")
                 return

@@ -19,6 +19,8 @@ dependencies = [
   "httpx>=0.28,<1",
   "pgvector>=0.4,<0.5",
   "faster-whisper==1.2.1",
+  "PyJWT>=2.10,<3",
+  "webrtcvad-wheels>=2.0.14,<3",
 ]
 
 [dependency-groups]

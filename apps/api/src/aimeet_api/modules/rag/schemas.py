@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -89,6 +90,48 @@ class RagConfiguration(BaseModel):
     embedding_model: str
     embedding_dimensions: int
     cloud_configured: bool
+
+
+class WorkspaceCoverage(BaseModel):
+    total: int = 0
+    ready: int = 0
+    pending: int = 0
+    failed: int = 0
+    not_indexed: int = 0
+    unavailable: int = 0
+
+
+class WorkspaceSource(Source):
+    meeting_id: uuid.UUID
+    meeting_title: str
+    meeting_created_at: datetime
+
+
+class CatalogSource(BaseModel):
+    source_id: str
+    text: str
+    meeting_id: uuid.UUID | None
+    meeting_title: str | None
+
+
+class CatalogCitation(BaseModel):
+    kind: Literal["catalog"] = "catalog"
+    source_id: str
+    quote: str
+
+
+class WorkspaceClaim(BaseModel):
+    text: str
+    citations: list[Citation | CatalogCitation]
+
+
+class WorkspaceAnswer(BaseModel):
+    status: Literal["answered", "insufficient_evidence"]
+    answer: str
+    claims: list[WorkspaceClaim]
+    sources: list[WorkspaceSource]
+    catalog_sources: list[CatalogSource] = Field(default_factory=list)
+    coverage: WorkspaceCoverage
 
 
 class GraphNode(BaseModel):

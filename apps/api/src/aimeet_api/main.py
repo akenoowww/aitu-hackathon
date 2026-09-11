@@ -15,6 +15,8 @@ from aimeet_api.core.schemas import ErrorResponse
 from aimeet_api.db.session import create_engine_and_session
 from aimeet_api.modules.auth.router import router as auth_router
 from aimeet_api.modules.intelligence.router import router as intelligence_router
+from aimeet_api.modules.live.audio import router as live_audio_router
+from aimeet_api.modules.live.router import router as live_router
 from aimeet_api.modules.meetings.router import router as meetings_router
 from aimeet_api.modules.rag.providers import RagError
 from aimeet_api.modules.rag.router import router as rag_router
@@ -111,6 +113,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse({"status": "unavailable"}, status_code=503)
 
     application.include_router(auth_router, prefix="/api/v1")
+    application.include_router(live_router, prefix="/api/v1")
+    application.include_router(live_audio_router, prefix="/api/v1")
     application.include_router(transcription_router, prefix="/api/v1")
     application.include_router(meetings_router, prefix="/api/v1")
     application.include_router(rag_router, prefix="/api/v1")

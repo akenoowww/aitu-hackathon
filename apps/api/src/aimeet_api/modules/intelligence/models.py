@@ -8,15 +8,17 @@ from aimeet_api.db.models import Base, utcnow
 
 
 class MeetingBoard(Base):
-    __tablename__ = 'meeting_boards'
+    __tablename__ = "meeting_boards"
     __table_args__ = (
-        CheckConstraint("status IN ('idle','queued','running','ready','failed')", name='status'),
+        CheckConstraint("status IN ('idle','queued','running','ready','failed')", name="status"),
     )
     meeting_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey('meetings.id', ondelete='CASCADE'), primary_key=True,
+        Uuid,
+        ForeignKey("meetings.id", ondelete="CASCADE"),
+        primary_key=True,
     )
     version: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(16), default='idle')
+    status: Mapped[str] = mapped_column(String(16), default="idle")
     source_hash: Mapped[str | None] = mapped_column(String(64))
     cards: Mapped[list] = mapped_column(JSON, default=list)
     summary: Mapped[list] = mapped_column(JSON, default=list)

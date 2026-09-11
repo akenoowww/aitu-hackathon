@@ -19,13 +19,19 @@ If answered, return at least one claim. Do not include citation markers in claim
 
 
 def answer_question(
-    index_id, question: str, sources: list[Source], config: Settings, providers: Providers
+    index_id,
+    question: str,
+    sources: list[Source],
+    config: Settings,
+    providers: Providers,
+    *,
+    instructions: str = INSTRUCTIONS,
 ) -> Answer:
     claims = []
     status = "insufficient_evidence"
     if sources:
         result = providers.generate(
-            INSTRUCTIONS,
+            instructions,
             json.dumps(
                 {
                     "question": question,

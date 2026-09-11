@@ -20,8 +20,11 @@ from aimeet_api.modules.rag.schemas import (
     Question,
     RagConfiguration,
     SearchResult,
+    WorkspaceAnswer,
+    WorkspaceCoverage,
 )
 from aimeet_api.modules.rag.service import answer_question
+from aimeet_api.modules.rag.workspace import answer_workspace, workspace_scope
 
 router = APIRouter(tags=["RAG"])
 
@@ -80,6 +83,52 @@ def configuration(user: CurrentUser, settings: SettingsDep):
         embedding_dimensions=settings.rag_embedding_dimensions,
         cloud_configured=bool(settings.openai_api_key.get_secret_value()),
     )
+
+
+@router.get("/rag/index", response_model=WorkspaceCoverage, operation_id="getWorkspaceRagIndex")
+def workspace_status(user: CurrentUser, db: DatabaseDep, settings: SettingsDep):
+    return workspace_scope(db, user.workspace_id, settings)[1]
+
+
+@router.post(
+    "/rag/index",
+    response_model=WorkspaceCoverage,
+    status_code=202,
+    dependencies=[Depends(require_csrf)],
+    operation_id="indexWorkspaceMeetings",
+)
+def index_workspace(
+    user: CurrentUser,
+    db: DatabaseDep,
+    settings: SettingsDep,
+    providers: ProviderDep,
+):
+    providers.ensure_configured()
+    workspace_id = user.workspace_id
+    scope, _ = workspace_scope(db, workspace_id, settings)
+    # Capture IDs before enqueue commits expire ORM instances.
+    missing = [meeting.id for meeting, index in scope if index is None or index.status == "failed"]
+    for meeting_id in missing:
+        meeting = MeetingRepository(db, workspace_id).get(meeting_id)
+        if meeting and meeting.transcript.strip() and len(meeting.transcript) <= 200_000:
+            enqueue(db, meeting, settings)
+    return workspace_scope(db, workspace_id, settings)[1]
+
+
+@router.post(
+    "/rag/chat",
+    response_model=WorkspaceAnswer,
+    dependencies=[Depends(require_csrf)],
+    operation_id="askWorkspaceMeetings",
+)
+def workspace_chat(
+    payload: Question,
+    user: CurrentUser,
+    db: DatabaseDep,
+    settings: SettingsDep,
+    providers: ProviderDep,
+):
+    return answer_workspace(db, user.workspace_id, payload.question, settings, providers)
 
 
 @router.get(

@@ -12,9 +12,9 @@ export class ApiError extends Error {
 }
 
 const baseUrl = '/api/v1'
-async function request<T>(path: string, schema: z.ZodType<T>, options?: RequestInit): Promise<T>
-async function request(path: string, schema: null, options?: RequestInit): Promise<void>
-async function request<T>(path: string, schema: z.ZodType<T> | null, options: RequestInit = {}): Promise<T | void> {
+export async function request<T>(path: string, schema: z.ZodType<T>, options?: RequestInit): Promise<T>
+export async function request(path: string, schema: null, options?: RequestInit): Promise<void>
+export async function request<T>(path: string, schema: z.ZodType<T> | null, options: RequestInit = {}): Promise<T | void> {
   const method = options.method ?? 'GET'
   const headers = new Headers(options.headers)
   headers.set('Accept', 'application/json')

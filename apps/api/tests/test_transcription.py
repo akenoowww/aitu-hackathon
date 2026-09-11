@@ -260,12 +260,16 @@ def test_adapter_passes_offline_settings_and_preserves_timestamps(tmp_path, monk
         "cpu_threads": 2,
         "language": "auto",
     }
-    result = transcribe(path, config, lambda _: None)
+    emitted = []
+    result = transcribe(path, config, emitted.append)
     assert captured["local_files_only"] is True
     assert captured["task"] == "transcribe"
     assert captured["language"] is None
     assert captured["vad_filter"] is True
     assert result["segments"] == [{"start": 0.1, "end": 0.8, "text": "Сәлем!"}]
+    assert {"segment": result["segments"][0]} in emitted
+    assert {"duration_seconds": 1.0} in emitted
+    assert {"detected_language": "kk"} in emitted
     path.write_bytes(b"changed")
     with pytest.raises(TranscriptionError, match="source_changed"):
         transcribe(path, config, lambda _: None)
@@ -287,3 +291,51 @@ def test_postgres_workers_claim_distinct_jobs(app, authenticated_client):
         )
     assert all(claim is not None for claim in claims)
     assert len({claim.id for claim in claims}) == 4
+
+
+def test_partial_transcript_is_visible_and_stale_writers_are_fenced(app, authenticated_client):
+    client = authenticated_client
+    mid = upload(client).json()["id"]
+    factory, settings = app.state.session_factory, app.state.settings
+    claim = claim_next(factory, settings)
+    assert heartbeat(factory, settings, claim, 45, partial=completed())
+    body = client.get(f"/api/v1/meetings/{mid}").json()
+    assert body["transcript"] == completed()["transcript"]
+    assert body["segments"] == completed()["segments"]
+    assert body["status"] == "draft"
+    assert body["transcription"]["status"] == "running"
+    assert body["transcription"]["duration_seconds"] == 1.0
+    assert client.post(f"/api/v1/meetings/{mid}/board/generate").status_code == 409
+    assert client.post(f"/api/v1/meetings/{mid}/transcription/cancel").status_code == 200
+    assert not heartbeat(
+        factory, settings, claim, 90, partial={**completed(), "transcript": "STALE"}
+    )
+    assert client.get(f"/api/v1/meetings/{mid}").json()["transcript"] == completed()["transcript"]
+    retry = client.post(f"/api/v1/meetings/{mid}/transcription/retry").json()
+    assert retry["transcript"] == ""
+    assert retry["segments"] is None
+    assert retry["transcription"]["duration_seconds"] is None
+    replacement = claim_next(factory, settings)
+    assert not heartbeat(factory, settings, claim, 90, partial=completed())
+    assert finish(factory, replacement, result=completed())
+    board = client.get(f"/api/v1/meetings/{mid}/board").json()
+    assert board["status"] == "queued"
+    assert not finish(factory, claim, result=completed())
+
+
+def test_expired_lease_restarts_partial_transcript_and_failed_job_does_not_queue_analysis(
+    app, authenticated_client
+):
+    client = authenticated_client
+    mid = upload(client).json()["id"]
+    factory, settings = app.state.session_factory, app.state.settings
+    claim = claim_next(factory, settings)
+    assert heartbeat(factory, settings, claim, 45, partial=completed())
+    with factory() as db:
+        db.execute(update(TranscriptionJob).values(lease_until=utcnow() - timedelta(seconds=1)))
+        db.commit()
+    replacement = claim_next(factory, settings)
+    assert client.get(f"/api/v1/meetings/{mid}").json()["transcript"] == ""
+    assert not heartbeat(factory, settings, claim, 50, partial=completed())
+    assert finish(factory, replacement, error="processing_failed")
+    assert client.get(f"/api/v1/meetings/{mid}/board").json()["status"] == "idle"
